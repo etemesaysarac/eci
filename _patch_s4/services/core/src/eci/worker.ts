@@ -14,33 +14,27 @@ process.on("unhandledRejection", (e: unknown) => console.error("[unhandledReject
 process.on("uncaughtException", (e: unknown) => console.error("[uncaughtException]", e));
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 60 * 60 * 1000);
-
-function syncLockKey(connectionId: string) {
-  return `eci:sync:lock:${connectionId}`;
-}
-
-async function refreshSyncLock(connectionId: string, jobId: string) {
-  try {
-    const key = syncLockKey(connectionId);
-    const cur = await redis.get(key);
-    if (cur === jobId) await redis.pexpire(key, SYNC_LOCK_TTL_MS);
-  } catch {
-    // ignore lock refresh errors
-  }
-}
-
-async function releaseSyncLock(connectionId: string, jobId: string) {
-  const key = syncLockKey(connectionId);
-  const lua = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) else return 0 end`;
-  try {
-    await redis.eval(lua, 1, key, jobId);
-  } catch {
-    // ignore
-  }
-}
-
 const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+
+const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 15 * 60 * 1000);
+function syncLockKey(connectionId: string) {
+  return `eci:lock:sync:orders:${connectionId}`;
+}
+const RELEASE_LOCK_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+else
+  return 0
+end
+`;
+async function releaseSyncLock(connectionId: string, expectedValue: string) {
+  try {
+    await redis.eval(RELEASE_LOCK_LUA, 1, syncLockKey(connectionId), expectedValue);
+  } catch {
+    // best-effort
+  }
+}
+
 
 type JobData = {
   connectionId: string;
@@ -306,7 +300,6 @@ const worker = new Worker(
         error: null,
       },
     });
-    await refreshSyncLock(connectionId, jobId);
 
     try {
       const conn = await prisma.connection.findUnique({ where: { id: connectionId } });
@@ -331,7 +324,6 @@ const worker = new Worker(
         where: { id: jobId },
         data: { status: "success", finishedAt: new Date(), summary, error: null },
       });
-      await releaseSyncLock(connectionId, jobId);
 
       log("job success", { name: job.name, jobId, connectionId, summary });
       return summary;
@@ -360,9 +352,11 @@ const worker = new Worker(
       // ÖNEMLİ:
       // - retrying ise throw ederek BullMQ'nun bir sonraki denemeyi planlamasını sağlarız
       // - retrying değilse throw ETMEYİZ: 401/403 gibi credential hatalarında BullMQ tekrar tekrar vurmasın
-      if (!retrying) await releaseSyncLock(connectionId, jobId);
       if (retrying) throw err;
       return { failed: true, error: String(err?.message ?? err) };
+    } finally {
+      // Concurrency guard lock release (best-effort)
+      await releaseSyncLock(connectionId, jobId);
     }
   },
   { connection: redis }

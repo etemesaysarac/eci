@@ -90,41 +90,32 @@ function buildHeaders(cfg: TrendyolConfig) {
 
 function snippet(data: unknown, max = 800): string {
   try {
-    // Probe / log hijyeni: PII içerebilecek alanları dökmeyelim.
-    // Trendyol orders response genelde { totalElements, totalPages, page, size, content:[...] } şeklinde.
-    if (data && typeof data === "object") {
-      const d: any = data as any;
-
-      const out: any = {};
-      for (const k of ["totalElements", "totalPages", "page", "size", "numberOfElements"]) {
-        if (typeof d[k] === "number") out[k] = d[k];
-      }
-
-      if (Array.isArray(d.content) && d.content.length > 0) {
-        const first: any = d.content[0] ?? {};
-        out.sample = {
-          orderNumber: first.orderNumber ?? first.orderNo ?? undefined,
-          shipmentPackageId: first.shipmentPackageId ?? first.packageId ?? undefined,
-          status: first.status ?? undefined,
-          orderDate: first.orderDate ?? undefined,
-        };
-      }
-
-      if (Object.keys(out).length > 0) {
-        const s = JSON.stringify(out);
-        return s.length > max ? s.slice(0, max) + "…" : s;
-      }
-
-      // generic: sadece anahtar listesini göster (PII riski düşük)
-      const keys = Object.keys(d).slice(0, 20);
-      const s = JSON.stringify({ keys });
-      return s.length > max ? s.slice(0, max) + "…" : s;
-    }
-
-    const s = typeof data === "string" ? data : String(data);
+    const s = typeof data === "string" ? data : JSON.stringify(data);
     return s.length > max ? s.slice(0, max) + "…" : s;
   } catch {
-    return "[unserializable]";
+    return String(data);
+  }
+}
+
+function probeSnippet(data: unknown): string {
+  try {
+    const obj: any = typeof data === "string" ? JSON.parse(data) : data;
+    const totalElements = obj?.totalElements;
+    const totalPages = obj?.totalPages;
+    const page = obj?.page;
+    const size = obj?.size;
+    const first = Array.isArray(obj?.content) ? obj.content[0] : undefined;
+    const sample = first
+      ? {
+          orderNumber: first.orderNumber ?? first.orderId ?? undefined,
+          shipmentPackageId: first.shipmentPackageId ?? undefined,
+          status: first.status ?? first.shipmentPackageStatus ?? undefined,
+        }
+      : undefined;
+    return JSON.stringify({ totalElements, totalPages, page, size, sample });
+  } catch {
+    // fallback (still bounded)
+    return snippet(data);
   }
 }
 
@@ -150,7 +141,7 @@ async function tryGet(url: string, cfg: TrendyolConfig) {
   return {
     url,
     status,
-    dataSnippet: snippet(data),
+    dataSnippet: probeSnippet(data),
   };
 }
 

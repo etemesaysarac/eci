@@ -1,27 +1,43 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 
 import express, { type Request, type Response, type NextFunction } from "express";
-import IORedis from "ioredis";
-import { randomUUID } from "crypto";
 import { z, type RefinementCtx } from "zod";
 import { eciQueue } from "./queue";
 import { prisma } from "./prisma";
 import { decryptJson, encryptJson } from "./lib/crypto";
 import { trendyolProbeShipmentPackages, type TrendyolConfig } from "./connectors/trendyol/client";
+import IORedis from "ioredis";
 
 process.on("unhandledRejection", (e: unknown) => console.error("[unhandledRejection]", e));
 process.on("uncaughtException", (e: unknown) => console.error("[uncaughtException]", e));
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 60 * 60 * 1000);
-const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
-
-function syncLockKey(connectionId: string) {
-  return `eci:sync:lock:${connectionId}`;
-}
-
 const app = express();
 app.use(express.json());
+
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+
+const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 15 * 60 * 1000);
+function syncLockKey(connectionId: string) {
+  return `eci:lock:sync:orders:${connectionId}`;
+}
+async function tryAcquireSyncLock(connectionId: string, lockValue: string) {
+  const key = syncLockKey(connectionId);
+  const ok = await redis.set(key, lockValue, "PX", SYNC_LOCK_TTL_MS, "NX");
+  return ok === "OK";
+}
+
+const RELEASE_LOCK_LUA = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+else
+  return 0
+end
+`;
+async function releaseSyncLock(connectionId: string, expectedValue: string) {
+  return redis.eval(RELEASE_LOCK_LUA, 1, syncLockKey(connectionId), expectedValue);
+}
+
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.
@@ -85,7 +101,7 @@ const SyncOrdersSchema = z
 function mask(s?: string) {
   if (!s) return s;
   if (s.length <= 8) return "****";
-  return s.slice(0, 4) + "â€¦" + s.slice(-4);
+  return s.slice(0, 4) + "…" + s.slice(-4);
 }
 
 function sanitizeConfig(cfg: TrendyolConfig) {
@@ -107,7 +123,7 @@ function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
   return {
     ...cfg,
     sellerId,
-    // "Basic <base64>" gelirse sadece base64 kÄ±smÄ±nÄ± saklÄ±yoruz.
+    // "Basic <base64>" gelirse sadece base64 kısmını saklıyoruz.
     token: tokenRaw ? tokenRaw.replace(/^Basic\s+/i, "").trim() : undefined,
     apiKey,
     apiSecret,
@@ -201,7 +217,7 @@ app.post("/v1/connections/:id/test", asyncHandler(async (req: Request, res: Resp
 // Jobs + data routes
 // -----------------------------
 
-// Sprint 2: GerÃ§ekte /orders Ã§ekiyoruz. Endpoint'i netleÅŸtirelim.
+// Sprint 2: Gerçekte /orders çekiyoruz. Endpoint'i netleştirelim.
 app.post("/v1/connections/:id/sync/orders", asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id;
 
@@ -213,6 +229,7 @@ app.post("/v1/connections/:id/sync/orders", asyncHandler(async (req: Request, re
   if (!conn) return res.status(404).json({ error: "not_found" });
   if (conn.type !== "trendyol") return res.status(400).json({ error: "only trendyol supported for now" });
 
+
   const payloadParsed = SyncOrdersSchema?.safeParse(req.body);
   if (payloadParsed && !payloadParsed.success) {
     return res.status(400).json({ error: payloadParsed.error.flatten() });
@@ -220,153 +237,115 @@ app.post("/v1/connections/:id/sync/orders", asyncHandler(async (req: Request, re
 
   const body = payloadParsed?.success ? payloadParsed.data ?? undefined : undefined;
 
-  // Concurrency guard: connection bazlÄ± tek aktif sync
-  const lockKey = syncLockKey(id);
-  const pending = `pending:${randomUUID()}`;
-  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
-  if (acquired !== "OK") {
+
+  // Concurrency guard: aynı connection için tek aktif sync.
+  // Lock alınamazsa, varsa mevcut active jobId ile dön; yoksa 409.
+  const lockToken = `req:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const lockOk = await tryAcquireSyncLock(id, lockToken);
+  if (!lockOk) {
     const active = await prisma.job.findFirst({
-      where: {
-        connectionId: id,
-        type: "TRENDYOL_SYNC_ORDERS",
-        status: { in: ["queued", "running", "retrying"] },
-      },
+      where: { connectionId: id, type: "TRENDYOL_SYNC_ORDERS", status: { in: ["queued", "running"] } },
       orderBy: { createdAt: "desc" },
-      select: { id: true, status: true, createdAt: true },
+      select: { id: true, status: true },
     });
+    return res.status(409).json({ error: "sync_in_progress", jobId: active?.id ?? null, status: active?.status ?? null });
+  }
 
-    return res.status(409).json({
-      error: "sync_in_progress",
+
+  const jobRow = await prisma.job.create({
+    data: {
       connectionId: id,
-      jobId: active?.id,
-      status: active?.status,
-      createdAt: active?.createdAt,
-    });
-  }
-
-  let jobRow: { id: string } | null = null;
-  try {
-    jobRow = await prisma.job.create({
-      data: {
-        connectionId: id,
-        type: "TRENDYOL_SYNC_ORDERS",
-        status: "queued",
-      },
-      select: { id: true },
-    });
-
-    // lock owner'Ä± gerÃ§ek jobId yapalÄ±m (worker release edebilsin)
-    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
-
-    await eciQueue.add(
-      "TRENDYOL_SYNC_ORDERS",
-      { jobId: jobRow.id, connectionId: id, params: body ?? null },
-      {
-        // Stabilizasyon: bir hata oldu diye direkt "failed" olmasÄ±n.
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-      }
-    );
-
-    return res.json({ jobId: jobRow.id });
-  } catch (e: any) {
-    // enqueue/create sÄ±rasÄ±nda hata olursa lock'u bÄ±rak
-    await redis.del(lockKey);
-    if (jobRow?.id) {
-      await prisma.job.update({
-        where: { id: jobRow.id },
-        data: { status: "failed", finishedAt: new Date(), error: String(e?.message ?? e) },
-      });
-    }
-    throw e;
-  }
-}));
-
-// Backward-compat: eski route'Ä± kÄ±rmayalÄ±m. (Deprecated)
-app.post("/v1/connections/:id/sync/shipment-packages", asyncHandler(async (req: Request, res: Response) => {
-  // Deprecated: eski route. ArtÄ±k orders sync ile aynÄ± iÅŸi yapÄ±yoruz.
-  const id = req.params.id;
-
-  const conn = await prisma.connection.findUnique({
-    where: { id },
-    select: { id: true, type: true },
+      type: "TRENDYOL_SYNC_ORDERS",
+      status: "queued",
+    },
+    select: { id: true },
   });
 
+  // Lock value'yu jobId ile değiştir (worker biterken güvenli release için)
+  await redis.set(syncLockKey(id), jobRow.id, "PX", SYNC_LOCK_TTL_MS, "XX");
+
+    try {
+    await eciQueue.add(
+        "TRENDYOL_SYNC_ORDERS",
+        { jobId: jobRow.id, connectionId: id, params: body ?? null },
+        {
+          // Stabilizasyon: bir hata oldu diye direkt "failed" olmasın.
+          attempts: 5,
+          backoff: { type: "exponential", delay: 1000 },
+          removeOnComplete: 1000,
+          removeOnFail: 1000,
+        }
+      );
+  } catch (e) {
+    await prisma.job.update({ where: { id: jobRow.id }, data: { status: "failed", finishedAt: new Date(), error: String(e) } });
+    await releaseSyncLock(id, jobRow.id);
+    throw e;
+  }
+
+
+  res.json({ jobId: jobRow.id });
+}));
+
+// Backward-compat: eski route'ı kırmayalım. (Deprecated)
+app.post("/v1/connections/:id/sync/shipment-packages", asyncHandler(async (req: Request, res: Response) => {
+  // Aynı iş: orders sync.
+  req.url = `/v1/connections/${req.params.id}/sync/orders`;
+  // Express'te route forward etmek kolay değil; aynı kodu küçük bir call ile tekrarlayalım.
+  const id = req.params.id;
+
+  const conn = await prisma.connection.findUnique({ where: { id }, select: { id: true, type: true } });
   if (!conn) return res.status(404).json({ error: "not_found" });
   if (conn.type !== "trendyol") return res.status(400).json({ error: "only trendyol supported for now" });
 
+
   const payloadParsed = SyncOrdersSchema?.safeParse(req.body);
   if (payloadParsed && !payloadParsed.success) {
     return res.status(400).json({ error: payloadParsed.error.flatten() });
   }
-
   const body = payloadParsed?.success ? payloadParsed.data ?? undefined : undefined;
 
-  // Concurrency guard: connection bazlÄ± tek aktif sync
-  const lockKey = syncLockKey(id);
-  const pending = `pending:${randomUUID()}`;
-  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
-  if (acquired !== "OK") {
-    const active = await prisma.job.findFirst({
-      where: {
-        connectionId: id,
-        type: { in: ["TRENDYOL_SYNC_ORDERS", "TRENDYOL_SYNC_SHIPMENT_PACKAGES"] },
-        status: { in: ["queued", "running", "retrying"] },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, status: true, createdAt: true },
-    });
 
-    return res.status(409).json({
-      error: "sync_in_progress",
-      connectionId: id,
-      jobId: active?.id,
-      status: active?.status,
-      createdAt: active?.createdAt,
-      deprecated: true,
-      note: "Use /v1/connections/:id/sync/orders",
+  // Concurrency guard: aynı connection için tek aktif sync.
+  // Lock alınamazsa, varsa mevcut active jobId ile dön; yoksa 409.
+  const lockToken = `req:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+  const lockOk = await tryAcquireSyncLock(id, lockToken);
+  if (!lockOk) {
+    const active = await prisma.job.findFirst({
+      where: { connectionId: id, type: "TRENDYOL_SYNC_ORDERS", status: { in: ["queued", "running"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, status: true },
     });
+    return res.status(409).json({ error: "sync_in_progress", jobId: active?.id ?? null, status: active?.status ?? null });
   }
 
-  let jobRow: { id: string } | null = null;
-  try {
-    jobRow = await prisma.job.create({
-      data: {
-        connectionId: id,
-        type: "TRENDYOL_SYNC_SHIPMENT_PACKAGES",
-        status: "queued",
-      },
-      select: { id: true },
-    });
 
-    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
+  const jobRow = await prisma.job.create({
+    data: { connectionId: id, type: "TRENDYOL_SYNC_ORDERS", status: "queued" },
+    select: { id: true },
+  });
 
+  await redis.set(syncLockKey(id), jobRow.id, "PX", SYNC_LOCK_TTL_MS, "XX");
+
+    try {
     await eciQueue.add(
-      "TRENDYOL_SYNC_SHIPMENT_PACKAGES",
-      { jobId: jobRow.id, connectionId: id, params: body ?? null },
-      {
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-      }
-    );
-
-    return res.json({ jobId: jobRow.id, deprecated: true, note: "Use /v1/connections/:id/sync/orders" });
-  } catch (e: any) {
-    await redis.del(lockKey);
-    if (jobRow?.id) {
-      await prisma.job.update({
-        where: { id: jobRow.id },
-        data: { status: "failed", finishedAt: new Date(), error: String(e?.message ?? e) },
-      });
-    }
+        "TRENDYOL_SYNC_ORDERS",
+        { jobId: jobRow.id, connectionId: id, params: body ?? null },
+        {
+          attempts: 5,
+          backoff: { type: "exponential", delay: 1000 },
+          removeOnComplete: 1000,
+          removeOnFail: 1000,
+        }
+      );
+  } catch (e) {
+    await prisma.job.update({ where: { id: jobRow.id }, data: { status: "failed", finishedAt: new Date(), error: String(e) } });
+    await releaseSyncLock(id, jobRow.id);
     throw e;
   }
-}));
 
+
+  res.json({ jobId: jobRow.id, deprecated: true, note: "Use /v1/connections/:id/sync/orders" });
+}));
 
 app.get("/v1/jobs", asyncHandler(async (req: Request, res: Response) => {
   const connectionId = String(req.query.connectionId ?? "");
