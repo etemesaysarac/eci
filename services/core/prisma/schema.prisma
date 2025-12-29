@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Connection {
+  id        String   @id @default(cuid())
+  type      String
+  name      String
+  status    String   @default("active")
+  configEnc String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs      Job[]
+  orders    Order[]
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  connectionId String
+  type         String
+  status       String    @default("queued")
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  summary      Json?
+  error        String?
+
+  createdAt    DateTime  @default(now())
+
+  connection   Connection @relation(fields: [connectionId], references: [id])
+}
+
+model Order {
+  id             String   @id @default(cuid())
+  connectionId   String
+  marketplace    String   @default("trendyol")
+  channelOrderId String
+  status         String?
+  raw            Json
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  connection     Connection @relation(fields: [connectionId], references: [id])
+
+  @@unique([connectionId, marketplace, channelOrderId])
+}

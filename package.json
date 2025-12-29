@@ -1,0 +1,27 @@
+{
+  "name": "eci",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "connectors/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n CORE,WORKER,PANEL -c auto \"npm run dev -w @eci/core\" \"npm run dev -w @eci/worker\" \"npm run dev -w @eci/panel\"",
+    "build": "npm run build -ws",
+    "lint": "npm run lint -ws"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.2.0",
+    "axios": "^1.13.2",
+    "bullmq": "^5.66.3",
+    "ioredis": "^5.8.2",
+    "prisma": "^7.2.0",
+    "zod": "^4.2.1"
+  }
+}

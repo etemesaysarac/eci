@@ -1,0 +1,11 @@
+﻿{
+    "config":  {
+                   "baseUrl":  "https://apigw.trendyol.com",
+                   "sellerId":  "142312",
+                   "apiSecret":  "92AvsUG9RvfAJIROdfjY",
+                   "env":  "prod",
+                   "apiKey":  "EKNjp5j8Snh6Yctl9OS4"
+               },
+    "name":  "real-142312",
+    "type":  "trendyol"
+}

@@ -1,0 +1,11 @@
+﻿{
+    "config":  {
+                   "baseUrl":  "http://127.0.0.1:3999",
+                   "sellerId":  "142312",
+                   "apiSecret":  "92AvsUG9RvfAJIROdfjY",
+                   "env":  "prod",
+                   "apiKey":  "EKNjp5j8Snh6Yctl9OS4"
+               },
+    "name":  "mock-142312",
+    "type":  "trendyol"
+}

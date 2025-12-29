@@ -1,0 +1,13 @@
+{
+    "type":  "trendyol",
+    "name":  "trendyol-test-142312",
+    "config":  {
+                   "sellerId":  "142312",
+                   "env":  "prod",
+                   "apiKey":  "EKNjp5j8Snh6Yctl9OS4",
+                   "apiSecret":  "92AvsUG9RvfAJIROdfjY",
+                   "agentName":  "SoXYZ",
+                   "integrationName":  "SoXYZ-ECI",
+                   "probeLegacy":  false
+               }
+}
