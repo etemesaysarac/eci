@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -149,6 +149,30 @@ app.get("/v1/connections", asyncHandler(async (_req: Request, res: Response) => 
     select: { id: true, type: true, name: true, status: true, createdAt: true, updatedAt: true },
   });
   res.json(rows);
+}));
+
+app.get("/v1/connections/:id/status", asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id;
+
+  const conn = await prisma.connection.findUnique({
+    where: { id },
+    select: { id: true, type: true, name: true, status: true, createdAt: true, updatedAt: true },
+  });
+
+  if (!conn) return res.status(404).json({ error: "not_found" });
+
+  const state = await prisma.syncState.findUnique({
+    where: { connectionId: id },
+    select: { lastAttemptAt: true, lastSuccessAt: true, lastStatus: true, lastJobId: true, lastError: true, updatedAt: true },
+  });
+
+  const lastJob = await prisma.job.findFirst({
+    where: { connectionId: id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, type: true, status: true, startedAt: true, finishedAt: true, summary: true, error: true, createdAt: true },
+  });
+
+  res.json({ connection: conn, state, lastJob });
 }));
 
 app.post("/v1/connections/:id/test", asyncHandler(async (req: Request, res: Response) => {
@@ -378,9 +402,32 @@ app.get("/v1/jobs", asyncHandler(async (req: Request, res: Response) => {
   res.json(rows);
 }));
 
+app.get("/v1/jobs/recent", asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = String(req.query.connectionId ?? "");
+  const limit = req.query.limit ? Math.max(1, Math.min(200, Number(req.query.limit))) : 50;
+
+  const rows = await prisma.job.findMany({
+    where: connectionId ? { connectionId } : undefined,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+
+  res.json(rows);
+}));
+
 app.get("/v1/orders", asyncHandler(async (req: Request, res: Response) => {
   const connectionId = String(req.query.connectionId ?? "");
   const rows = await prisma.order.findMany({
+    where: connectionId ? { connectionId } : undefined,
+    orderBy: { updatedAt: "desc" },
+    take: 100,
+  });
+  res.json(rows);
+}));
+
+app.get("/v1/shipment-packages", asyncHandler(async (req: Request, res: Response) => {
+  const connectionId = String(req.query.connectionId ?? "");
+  const rows = await prisma.shipmentPackage.findMany({
     where: connectionId ? { connectionId } : undefined,
     orderBy: { updatedAt: "desc" },
     take: 100,

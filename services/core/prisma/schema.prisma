@@ -20,6 +20,7 @@ model Connection {
   syncState SyncState?
   jobs      Job[]
   orders    Order[]
+  shipmentPackages ShipmentPackage[]
 }
 
 model Job {
@@ -52,6 +53,27 @@ model Order {
 
   @@unique([connectionId, marketplace, channelOrderId])
 }
+
+
+model ShipmentPackage {
+  id                String   @id @default(cuid())
+  connectionId      String
+  marketplace       String   @default("trendyol")
+  shipmentPackageId String
+  orderNumber       String?
+  status            String?
+  raw               Json
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  connection        Connection @relation(fields: [connectionId], references: [id])
+
+  @@unique([connectionId, marketplace, shipmentPackageId])
+  @@map("shipment_package")
+  @@index([updatedAt])
+}
+
 
 model SyncState {
   connectionId  String   @id

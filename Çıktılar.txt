@@ -1,11 +1,21 @@
-PS C:\dev\eci\services\core> @"
->> select "connectionId", "lastAttemptAt", "lastSuccessAt", "lastStatus", "lastJobId", "lastError"
->> from sync_state
->> where "connectionId"='cmjsfj9aw0000e6zw8gc0t8mt';
->> "@ | docker exec -i infra-postgres-1 psql -U eci -d eci
-       connectionId        |      lastAttemptAt      |     lastSuccessAt     | lastStatus |         lastJobId         | lastError
----------------------------+-------------------------+-----------------------+------------+---------------------------+-----------
- cmjsfj9aw0000e6zw8gc0t8mt | 2025-12-30 11:15:08.948 | 2025-12-30 11:15:09.1 | SUCCESS    | cmjshqbiv0001e6lw6b6ayz7m |
+PS C:\dev\eci\services\core> @'
+>> select count(*) as total,
+>>        count(distinct "shipmentPackageId") as distinct_ids
+>> from shipment_package;
+>> '@ | docker exec -i infra-postgres-1 psql -U eci -d eci
+ total | distinct_ids
+-------+--------------
+     1 |            1
 (1 row)
+
+PS C:\dev\eci\services\core> @'
+>> select "shipmentPackageId", count(*)
+>> from shipment_package
+>> group by 1
+>> having count(*) > 1;
+>> '@ | docker exec -i infra-postgres-1 psql -U eci -d eci
+ shipmentPackageId | count
+-------------------+-------
+(0 rows)
 
 PS C:\dev\eci\services\core>

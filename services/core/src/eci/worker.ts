@@ -62,6 +62,9 @@ const ECI_SYNC_SAFETY_DELAY_MINUTES = numEnv("ECI_SYNC_SAFETY_DELAY_MINUTES", 2)
 const ECI_SYNC_BOOTSTRAP_HOURS = numEnv("ECI_SYNC_BOOTSTRAP_HOURS", 24);
 const ECI_SYNC_MAX_WINDOW_DAYS = numEnv("ECI_SYNC_MAX_WINDOW_DAYS", 14);
 
+// Sprint 6: scheduler only-due
+const ECI_SCHEDULER_MIN_INTERVAL_MS = numEnv("ECI_SCHEDULER_MIN_INTERVAL_MS", 5 * 60 * 1000);
+
 // Sprint 5 scheduler config (interval-based)
 const SCHEDULER_EVERY_MS = numEnv("SCHEDULER_EVERY_MS", 0);
 const SCHEDULER_ENABLED =
@@ -213,9 +216,22 @@ async function schedulerTick() {
       select: { id: true },
     });
 
-    log("scheduler tick", { connections: conns.length, everyMs: SCHEDULER_EVERY_MS });
+    log("scheduler tick", { connections: conns.length, everyMs: SCHEDULER_EVERY_MS, minIntervalMs: ECI_SCHEDULER_MIN_INTERVAL_MS });
 
     for (const c of conns) {
+      // Sprint 6: only-due filter (avoid aggressive polling)
+      const st = await prisma.syncState.findUnique({
+        where: { connectionId: c.id },
+        select: { lastAttemptAt: true },
+      });
+      if (st?.lastAttemptAt) {
+        const agoMs = Date.now() - new Date(st.lastAttemptAt).getTime();
+        if (agoMs < ECI_SCHEDULER_MIN_INTERVAL_MS) {
+          log("scheduler skipped (only_due)", { connectionId: c.id, lastAttemptAgoMs: agoMs });
+          continue;
+        }
+      }
+
       const r = await enqueueTrendyolSyncOrders(c.id, null);
       if (r.enqueued) {
         log("scheduler enqueued TRENDYOL_SYNC_ORDERS", { connectionId: c.id, jobId: r.jobId });
@@ -239,7 +255,7 @@ function startScheduler() {
     return;
   }
 
-  log("scheduler enabled", { everyMs: SCHEDULER_EVERY_MS });
+  log("scheduler enabled", { everyMs: SCHEDULER_EVERY_MS, minIntervalMs: ECI_SCHEDULER_MIN_INTERVAL_MS });
 
   // Run once on boot, then on interval
   void schedulerTick();
@@ -319,6 +335,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
   }
 
   let upserted = 0;
+  let shipUpserted = 0;
   let fetched = 0;
   let requestedPages = 0;
 
@@ -406,6 +423,34 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
         });
 
         upserted++;
+        // Sprint 6: package-level idempotency
+        const shipmentPackageId = it?.shipmentPackageId ?? it?.packageId ?? it?.id ?? null;
+        if (shipmentPackageId != null && String(shipmentPackageId).trim() !== "") {
+          await prisma.shipmentPackage.upsert({
+            where: {
+              connectionId_marketplace_shipmentPackageId: {
+                connectionId,
+                marketplace: "trendyol",
+                shipmentPackageId: String(shipmentPackageId),
+              },
+            },
+            create: {
+              connectionId,
+              marketplace: "trendyol",
+              shipmentPackageId: String(shipmentPackageId),
+              orderNumber: it?.orderNumber != null ? String(it.orderNumber) : null,
+              status: it?.status != null ? String(it.status) : null,
+              raw: it,
+            },
+            update: {
+              orderNumber: it?.orderNumber != null ? String(it.orderNumber) : null,
+              status: it?.status != null ? String(it.status) : null,
+              raw: it,
+            },
+          });
+          shipUpserted++;
+        }
+
       }
 
       log("page processed", {
@@ -417,6 +462,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
         fetched,
         upserted,
         totalPages,
+        shipUpserted,
       });
 
       if (totalPages === null && items.length < pageSize) break;
@@ -438,6 +484,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
     connectionId,
     fetched,
     upserted,
+    shipUpserted,
     requestedPages,
     windows: windows.length,
   });
@@ -628,6 +675,7 @@ const auto = { startDate: autoStart, endDate: autoEnd };
         fetched: (summary as any)?.fetched,
         upserted: (summary as any)?.upserted,
         inserted: (summary as any)?.inserted,
+        shipUpserted: (summary as any)?.shipUpserted,
         durationMs,
         usedAutoWindow,
       });
