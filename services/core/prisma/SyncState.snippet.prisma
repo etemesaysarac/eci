@@ -1,0 +1,15 @@
+// schema.prisma -> model'ların en altına EKLE
+model SyncState {
+  connectionId  String   @id
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  lastSuccessAt DateTime?
+  lastAttemptAt DateTime?
+  lastStatus    String
+  lastJobId     String?
+  lastError     String?
+
+  updatedAt     DateTime @updatedAt
+
+  @@map("sync_state")
+}

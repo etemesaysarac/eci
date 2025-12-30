@@ -3,6 +3,7 @@ import "dotenv/config";
 import { Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "./prisma";
+import { computeSyncWindow } from "./sync/window";
 import { decryptJson } from "./lib/crypto";
 import {
   trendyolGetOrders,
@@ -15,6 +16,18 @@ process.on("uncaughtException", (e: unknown) => console.error("[uncaughtExceptio
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 60 * 60 * 1000);
+
+function numEnv(name: string, fallback: number) {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+// Sprint 5 incremental sync window config
+const ECI_SYNC_OVERLAP_MINUTES = numEnv("ECI_SYNC_OVERLAP_MINUTES", 15);
+const ECI_SYNC_SAFETY_DELAY_MINUTES = numEnv("ECI_SYNC_SAFETY_DELAY_MINUTES", 2);
+const ECI_SYNC_BOOTSTRAP_HOURS = numEnv("ECI_SYNC_BOOTSTRAP_HOURS", 24);
+const ECI_SYNC_MAX_WINDOW_DAYS = numEnv("ECI_SYNC_MAX_WINDOW_DAYS", 14);
+
 
 function syncLockKey(connectionId: string) {
   return `eci:sync:lock:${connectionId}`;
@@ -308,6 +321,57 @@ const worker = new Worker(
     });
     await refreshSyncLock(connectionId, jobId);
 
+
+    const attemptAt = new Date();
+
+    // Sprint 5: ensure per-connection sync_state exists and mark RUNNING
+    await prisma.syncState.upsert({
+      where: { connectionId },
+      create: {
+        connectionId,
+        lastAttemptAt: attemptAt,
+        lastStatus: "RUNNING",
+        lastJobId: jobId,
+        lastError: null,
+      },
+      update: {
+        lastAttemptAt: attemptAt,
+        lastStatus: "RUNNING",
+        lastJobId: jobId,
+        lastError: null,
+      },
+    });
+
+    // Determine sync window: manual params override; otherwise auto window from lastSuccessAt
+    const state = await prisma.syncState.findUnique({
+      where: { connectionId },
+      select: { lastSuccessAt: true },
+    });
+
+    const auto = computeSyncWindow({
+      lastSuccessAt: state?.lastSuccessAt ?? null,
+      overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
+      safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
+      bootstrapHours: ECI_SYNC_BOOTSTRAP_HOURS,
+      maxWindowDays: ECI_SYNC_MAX_WINDOW_DAYS,
+    });
+
+    const hasManualStart = typeof params?.startDate === "number";
+    const hasManualEnd = typeof params?.endDate === "number";
+
+    const windowStart = hasManualStart ? (params!.startDate as number) : auto.startDate;
+    const windowEnd = hasManualEnd ? (params!.endDate as number) : auto.endDate;
+
+    const usedAutoWindow = !(hasManualStart || hasManualEnd);
+
+    const effectiveParams: JobData["params"] = {
+      ...(params ?? {}),
+      startDate: windowStart,
+      endDate: windowEnd,
+    };
+
+    const t0 = Date.now();
+
     try {
       const conn = await prisma.connection.findUnique({ where: { id: connectionId } });
       if (!conn) throw new Error("connection not found: " + connectionId);
@@ -317,15 +381,59 @@ const worker = new Worker(
       let summary: any;
       switch (job.name) {
         case "TRENDYOL_SYNC_ORDERS":
-          summary = await syncOrders(connectionId, cfg, params ?? undefined);
+          summary = await syncOrders(connectionId, cfg, effectiveParams ?? undefined);
           break;
         // Backward-compat: eski job adı.
         case "TRENDYOL_SYNC_SHIPMENT_PACKAGES":
-          summary = await syncOrders(connectionId, cfg, params ?? undefined);
+          summary = await syncOrders(connectionId, cfg, effectiveParams ?? undefined);
           break;
         default:
           throw new Error(`unknown job: ${job.name}`);
       }
+
+
+      const durationMs = Date.now() - t0;
+
+      summary = {
+        ...summary,
+        windowStart: new Date(windowStart).toISOString(),
+        windowEnd: new Date(windowEnd).toISOString(),
+        durationMs,
+        usedAutoWindow,
+        overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
+        safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
+      };
+
+      // Sprint 5: update lastSuccessAt only on SUCCESS
+      await prisma.syncState.upsert({
+        where: { connectionId },
+        create: {
+          connectionId,
+          lastSuccessAt: new Date(),
+          lastStatus: "SUCCESS",
+          lastJobId: jobId,
+          lastError: null,
+          lastAttemptAt: attemptAt,
+        },
+        update: {
+          lastSuccessAt: new Date(),
+          lastStatus: "SUCCESS",
+          lastJobId: jobId,
+          lastError: null,
+        },
+      });
+
+      log("SYNC_SUMMARY", {
+        connectionId,
+        jobId,
+        windowStart: summary.windowStart,
+        windowEnd: summary.windowEnd,
+        fetched: (summary as any)?.fetched,
+        upserted: (summary as any)?.upserted,
+        inserted: (summary as any)?.inserted,
+        durationMs,
+        usedAutoWindow,
+      });
 
       await prisma.job.update({
         where: { id: jobId },
@@ -337,6 +445,24 @@ const worker = new Worker(
       return summary;
     } catch (err: any) {
       const retrying = shouldRetry(err) && attempt < maxAttempts;
+
+      // Sprint 5: mark state as RETRYING/FAIL. Use upsert to avoid "record not found" errors.
+      await prisma.syncState.upsert({
+        where: { connectionId },
+        create: {
+          connectionId,
+          lastAttemptAt: new Date(),
+          lastStatus: retrying ? "RETRYING" : "FAIL",
+          lastJobId: jobId,
+          lastError: String(err?.message ?? err),
+        },
+        update: {
+          lastAttemptAt: new Date(),
+          lastStatus: retrying ? "RETRYING" : "FAIL",
+          lastJobId: jobId,
+          lastError: String(err?.message ?? err),
+        },
+      });
 
       await prisma.job.update({
         where: { id: jobId },

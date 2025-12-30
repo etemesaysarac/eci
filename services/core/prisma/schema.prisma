@@ -17,6 +17,7 @@ model Connection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  syncState SyncState?
   jobs      Job[]
   orders    Order[]
 }
@@ -50,4 +51,20 @@ model Order {
   connection     Connection @relation(fields: [connectionId], references: [id])
 
   @@unique([connectionId, marketplace, channelOrderId])
+}
+
+model SyncState {
+  connectionId  String   @id
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  lastSuccessAt DateTime?
+  lastAttemptAt DateTime?
+  lastStatus    String?
+  lastJobId     String?
+  lastError     String?
+
+  updatedAt     DateTime @updatedAt
+
+  @@map("sync_state")
+  @@index([updatedAt])
 }
