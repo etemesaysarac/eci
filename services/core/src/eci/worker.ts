@@ -1,6 +1,40 @@
-import "dotenv/config";
+import fs from "fs";
+import path from "path";
+import dotenv from "dotenv";
 
-import { Worker, type Job } from "bullmq";
+// Robust .env loading for Windows/tsx: try current working dir, then parent dirs.
+// This prevents scheduler env (SCHEDULER_EVERY_MS / SCHEDULER_ENABLED) from silently defaulting to 0/false.
+(() => {
+  // Load .env from multiple possible locations.
+  // We intentionally load *all* existing candidates from repo root -> current dir,
+  // so that a stale/partial .env in services/core does not hide scheduler vars in repo root.
+  const candidates = [
+    path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), "../.env"),
+    path.resolve(process.cwd(), "../../.env"),
+    path.resolve(process.cwd(), "../../../.env"),
+  ];
+
+  const existing = candidates.filter((p) => fs.existsSync(p));
+  if (existing.length === 0) {
+    console.log(`[eci-worker] .env not found (cwd=${process.cwd()})`);
+    return;
+  }
+
+  // Load from farthest parent to closest (root -> cwd). Closest wins for overlapping keys.
+  const toLoad = [...new Set(existing)].reverse();
+
+  for (const p of toLoad) {
+    const res = dotenv.config({ path: p, override: true });
+    const n = res.parsed ? Object.keys(res.parsed).length : 0;
+    console.log(`[eci-worker] loaded .env from ${p} (keys=${n}, override=true)`);
+  }
+})();
+
+
+import { randomUUID } from "crypto";
+
+import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "./prisma";
 import { computeSyncWindow } from "./sync/window";
@@ -28,6 +62,13 @@ const ECI_SYNC_SAFETY_DELAY_MINUTES = numEnv("ECI_SYNC_SAFETY_DELAY_MINUTES", 2)
 const ECI_SYNC_BOOTSTRAP_HOURS = numEnv("ECI_SYNC_BOOTSTRAP_HOURS", 24);
 const ECI_SYNC_MAX_WINDOW_DAYS = numEnv("ECI_SYNC_MAX_WINDOW_DAYS", 14);
 
+// Sprint 5 scheduler config (interval-based)
+const SCHEDULER_EVERY_MS = numEnv("SCHEDULER_EVERY_MS", 0);
+const SCHEDULER_ENABLED =
+  (process.env.SCHEDULER_ENABLED ?? "").toLowerCase() === "true" ||
+  (SCHEDULER_EVERY_MS > 0 && process.env.SCHEDULER_ENABLED == null);
+
+
 
 function syncLockKey(connectionId: string) {
   return `eci:sync:lock:${connectionId}`;
@@ -54,6 +95,8 @@ async function releaseSyncLock(connectionId: string, jobId: string) {
 }
 
 const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+const eciQueue = new Queue("eci-jobs", { connection: redis });
+
 
 type JobData = {
   connectionId: string;
@@ -73,6 +116,135 @@ function nowIso() {
 function log(msg: string, meta?: Record<string, unknown>) {
   const suffix = meta ? ` ${JSON.stringify(meta)}` : "";
   console.log(`[eci-worker] ${nowIso()} ${msg}${suffix}`);
+}
+
+// -----------------------------------------------------------------------------
+// Scheduler (Sprint 5) - automatically enqueue incremental sync jobs on interval
+// -----------------------------------------------------------------------------
+
+type EnqueueResult =
+  | { enqueued: true; jobId: string }
+  | { enqueued: false; reason: "sync_in_progress" | "error"; error?: string };
+
+async function compareDel(key: string, expectedValue: string) {
+  // Delete key only if it still matches expectedValue (avoid killing another owner lock)
+  const lua = `
+    if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    else
+      return 0
+    end
+  `;
+  await redis.eval(lua, 1, key, expectedValue);
+}
+
+async function enqueueTrendyolSyncOrders(
+  connectionId: string,
+  params: JobData["params"] = null
+): Promise<EnqueueResult> {
+  const lockKey = syncLockKey(connectionId);
+  const pending = `pending:${randomUUID()}`;
+
+  // Acquire lock (same semantics as API endpoint)
+  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
+  if (acquired !== "OK") return { enqueued: false, reason: "sync_in_progress" };
+
+  let jobRow: { id: string } | null = null;
+  try {
+    jobRow = await prisma.job.create({
+      data: {
+        connectionId,
+        type: "TRENDYOL_SYNC_ORDERS",
+        status: "queued",
+      },
+      select: { id: true },
+    });
+
+    // lock owner'ı gerçek jobId yapalım (worker release edebilsin)
+    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
+
+    await eciQueue.add(
+      "TRENDYOL_SYNC_ORDERS",
+      { jobId: jobRow.id, connectionId, params: params ?? null },
+      {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      }
+    );
+
+    return { enqueued: true, jobId: jobRow.id };
+  } catch (e: any) {
+    const errMsg = String(e?.message ?? e);
+
+    if (jobRow?.id) {
+      try {
+        await prisma.job.update({
+          where: { id: jobRow.id },
+          data: { status: "failed", finishedAt: new Date(), error: errMsg },
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    // Release lock (either still pending, or already switched to jobRow.id)
+    try {
+      await compareDel(lockKey, jobRow?.id ?? pending);
+    } catch {
+      // ignore
+    }
+
+    return { enqueued: false, reason: "error", error: errMsg };
+  }
+}
+
+let schedulerTickRunning = false;
+
+async function schedulerTick() {
+  if (schedulerTickRunning) return;
+  schedulerTickRunning = true;
+  const startedAt = Date.now();
+
+  try {
+    const conns = await prisma.connection.findMany({
+      where: { type: "trendyol", status: "active" },
+      select: { id: true },
+    });
+
+    log("scheduler tick", { connections: conns.length, everyMs: SCHEDULER_EVERY_MS });
+
+    for (const c of conns) {
+      const r = await enqueueTrendyolSyncOrders(c.id, null);
+      if (r.enqueued) {
+        log("scheduler enqueued TRENDYOL_SYNC_ORDERS", { connectionId: c.id, jobId: r.jobId });
+      } else if (r.reason === "sync_in_progress") {
+        log("scheduler skipped (sync_in_progress)", { connectionId: c.id });
+      } else {
+        log("scheduler enqueue failed", { connectionId: c.id, error: r.error });
+      }
+    }
+  } catch (e: any) {
+    log("scheduler tick error", { error: String(e?.message ?? e) });
+  } finally {
+    schedulerTickRunning = false;
+    log("scheduler tick done", { durationMs: Date.now() - startedAt });
+  }
+}
+
+function startScheduler() {
+  if (!SCHEDULER_ENABLED || SCHEDULER_EVERY_MS <= 0) {
+    log("scheduler disabled", { SCHEDULER_ENABLED, SCHEDULER_EVERY_MS });
+    return;
+  }
+
+  log("scheduler enabled", { everyMs: SCHEDULER_EVERY_MS });
+
+  // Run once on boot, then on interval
+  void schedulerTick();
+  const t = setInterval(() => void schedulerTick(), SCHEDULER_EVERY_MS);
+  (t as any).unref?.();
 }
 
 function parseHttpStatusFromErrorMessage(msg: string): number | null {
@@ -348,13 +520,38 @@ const worker = new Worker(
       select: { lastSuccessAt: true },
     });
 
-    const auto = computeSyncWindow({
-      lastSuccessAt: state?.lastSuccessAt ?? null,
-      overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
-      safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
-      bootstrapHours: ECI_SYNC_BOOTSTRAP_HOURS,
-      maxWindowDays: ECI_SYNC_MAX_WINDOW_DAYS,
-    });
+const autoRaw: any = computeSyncWindow({
+  lastSuccessAt: state?.lastSuccessAt ?? null,
+  // bazı implementasyonlar `now` bekliyor; scheduler'da undefined kalmasın
+  now: new Date(),
+  overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
+  safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
+  bootstrapHours: ECI_SYNC_BOOTSTRAP_HOURS,
+  maxWindowDays: ECI_SYNC_MAX_WINDOW_DAYS,
+} as any);
+
+const fallbackEnd = Date.now() - ECI_SYNC_SAFETY_DELAY_MINUTES * 60_000;
+const fallbackStart = fallbackEnd - ECI_SYNC_BOOTSTRAP_HOURS * 3600_000;
+
+const autoStart =
+  typeof autoRaw?.startDate === "number"
+    ? autoRaw.startDate
+    : autoRaw?.windowStart instanceof Date
+      ? autoRaw.windowStart.getTime()
+      : Number.isFinite(Number(autoRaw?.windowStart))
+        ? Number(autoRaw.windowStart)
+        : fallbackStart;
+
+const autoEnd =
+  typeof autoRaw?.endDate === "number"
+    ? autoRaw.endDate
+    : autoRaw?.windowEnd instanceof Date
+      ? autoRaw.windowEnd.getTime()
+      : Number.isFinite(Number(autoRaw?.windowEnd))
+        ? Number(autoRaw.windowEnd)
+        : fallbackEnd;
+
+const auto = { startDate: autoStart, endDate: autoEnd };
 
     const hasManualStart = typeof params?.startDate === "number";
     const hasManualEnd = typeof params?.endDate === "number";
@@ -510,5 +707,7 @@ worker.on("failed", (job, err) => {
     error: String((err as any)?.message ?? err),
   });
 });
+
+startScheduler();
 
 log(`pid=${process.pid} listening for jobs on queue: eci-jobs (${REDIS_URL})`);

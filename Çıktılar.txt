@@ -1,27 +1,11 @@
-PS C:\dev\eci\services\core> redis-cli -u redis://localhost:6379 DEL eci:sync:lock:cmjo9odgq0000e688z3fis0hg
-redis-cli : The term 'redis-cli' is not recognized as the name of a cmdlet, function, script file,
- or operable program. Check the spelling of the name, or if a path was included, verify that the p
-ath is correct and try again.
-At line:1 char:1
-+ redis-cli -u redis://localhost:6379 DEL eci:sync:lock:cmjo9odgq0000e6 ...
-+ ~~~~~~~~~
-    + CategoryInfo          : ObjectNotFound: (redis-cli:String) [], CommandNotFoundException
-    + FullyQualifiedErrorId : CommandNotFoundException
+PS C:\dev\eci\services\core> @"
+>> select "connectionId", "lastAttemptAt", "lastSuccessAt", "lastStatus", "lastJobId", "lastError"
+>> from sync_state
+>> where "connectionId"='cmjsfj9aw0000e6zw8gc0t8mt';
+>> "@ | docker exec -i infra-postgres-1 psql -U eci -d eci
+       connectionId        |      lastAttemptAt      |     lastSuccessAt     | lastStatus |         lastJobId         | lastError
+---------------------------+-------------------------+-----------------------+------------+---------------------------+-----------
+ cmjsfj9aw0000e6zw8gc0t8mt | 2025-12-30 11:15:08.948 | 2025-12-30 11:15:09.1 | SUCCESS    | cmjshqbiv0001e6lw6b6ayz7m |
+(1 row)
 
-PS C:\dev\eci\services\core> curl.exe -i -X POST "http://127.0.0.1:3001/v1/connections/cmjo9odgq0000e688z3fis0hg/sync/orders"
-HTTP/1.1 409 Conflict
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 164
-ETag: W/"a4-yYKOhQjuXLvs18WZyt5EAWiDQxQ"
-Date: Tue, 30 Dec 2025 08:03:30 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-
-{"error":"sync_in_progress","connectionId":"cmjo9odgq0000e688z3fis0hg","jobId":"cmjsai30l0001e6okvq5es1lm","status":"queued","createdAt":"2025-12-30T07:52:47.301Z"}
-PS C:\dev\eci\services\core> @'
->> select * from sync_state order by "updatedAt" desc;
->> '@ | docker exec -i infra-postgres-1 psql -U eci -d eci
- connectionId | lastSuccessAt | lastAttemptAt | lastStatus | lastJobId | lastError | updatedAt
---------------+---------------+---------------+------------+-----------+-----------+-----------
-(0 rows)
+PS C:\dev\eci\services\core>
