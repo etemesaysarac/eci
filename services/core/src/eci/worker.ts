@@ -212,7 +212,8 @@ async function schedulerTick() {
 
   try {
     const conns = await prisma.connection.findMany({
-      where: { type: "trendyol", status: "active" },
+      // Backward-compat: eski DB'lerde status="enabled" kalmis olabilir.
+      where: { type: "trendyol", status: { in: ["active", "enabled"] } },
       select: { id: true },
     });
 
@@ -306,7 +307,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
   // upserted sayacı şu an "işlenen" kayıt sayısı; insert/update ayrımı yapmıyor.
   // Bu yüzden sync öncesi/sonrası toplam kayıt sayısını ölçüyoruz.
   const countBefore = await prisma.order.count({
-    where: { connectionId, marketplace: "trendyol" },
+    where: { connectionId },
   });
 
   // Trendyol dokümantasyonunda startDate/endDate ile maksimum aralık 2 hafta.
@@ -396,6 +397,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
       fetched += items.length;
 
       for (const it of items) {
+        const marketplace = "trendyol";
         const channelOrderId = String(
           it?.orderNumber ?? it?.orderId ?? it?.id ?? it?.shipmentPackageId ?? it?.packageId ?? ""
         );
@@ -405,21 +407,12 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
           where: {
             connectionId_marketplace_channelOrderId: {
               connectionId,
-              marketplace: "trendyol",
+              marketplace,
               channelOrderId,
             },
           },
-          create: {
-            connectionId,
-            marketplace: "trendyol",
-            channelOrderId,
-            status: String(it?.status ?? status ?? ""),
-            raw: it,
-          },
-          update: {
-            status: String(it?.status ?? status ?? ""),
-            raw: it,
-          },
+          create: { connectionId, marketplace, channelOrderId, raw: it },
+          update: { raw: it },
         });
 
         upserted++;
@@ -430,23 +423,12 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
             where: {
               connectionId_marketplace_shipmentPackageId: {
                 connectionId,
-                marketplace: "trendyol",
+                marketplace,
                 shipmentPackageId: String(shipmentPackageId),
               },
             },
-            create: {
-              connectionId,
-              marketplace: "trendyol",
-              shipmentPackageId: String(shipmentPackageId),
-              orderNumber: it?.orderNumber != null ? String(it.orderNumber) : null,
-              status: it?.status != null ? String(it.status) : null,
-              raw: it,
-            },
-            update: {
-              orderNumber: it?.orderNumber != null ? String(it.orderNumber) : null,
-              status: it?.status != null ? String(it.status) : null,
-              raw: it,
-            },
+            create: { connectionId, marketplace, shipmentPackageId: String(shipmentPackageId), raw: it },
+            update: { raw: it },
           });
           shipUpserted++;
         }
@@ -490,7 +472,7 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
   });
 
   const countAfter = await prisma.order.count({
-    where: { connectionId, marketplace: "trendyol" },
+    where: { connectionId },
   });
 
   const inserted = Math.max(0, countAfter - countBefore);

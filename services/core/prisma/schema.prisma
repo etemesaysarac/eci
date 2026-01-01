@@ -1,16 +1,108 @@
-/// --- Sprint 7 additions ---
-/// Append this model to your existing Prisma schema.prisma (do NOT delete your current models).
+// Prisma schema for ECI core
+// Source of truth: code under services/core/src/eci
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Connection {
+  id        String   @id @default(cuid())
+  type      String
+  name      String
+  status    String   @default("active")
+  configEnc String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs                 Job[]
+  orders               Order[]
+  shipmentPackages      ShipmentPackage[]
+  syncState             SyncState?
+  shipmentPackageActions ShipmentPackageAction[]
+}
+
+model Job {
+  id           String   @id @default(cuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  type         String
+  status       String   @default("queued")
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  summary      Json?
+  error        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([connectionId])
+}
+
+model Order {
+  id            String   @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String   @default("trendyol")
+  channelOrderId String
+  status        String?
+  raw           Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Prisma name kept for code: where: { connectionId_marketplace_channelOrderId: {...} }
+  // DB constraint already exists in migration(so_xyz) under this name.
+  @@unique([connectionId, marketplace, channelOrderId], name: "connectionId_marketplace_channelOrderId", map: "Order_connectionId_marketplace_channelOrderId_key")
+  @@index([connectionId])
+}
+
+model ShipmentPackage {
+  id               String   @id @default(cuid())
+  connectionId     String
+  connection       Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace      String   @default("trendyol")
+  shipmentPackageId String
+  status           String?
+  raw              Json
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Prisma name kept for code: where: { connectionId_marketplace_shipmentPackageId: {...} }
+  @@unique([connectionId, marketplace, shipmentPackageId], name: "connectionId_marketplace_shipmentPackageId", map: "ShipmentPackage_connectionId_marketplace_shipmentPackageId_key")
+  @@index([connectionId])
+}
+
+model SyncState {
+  connectionId  String   @id
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  lastSuccessAt DateTime?
+  lastAttemptAt DateTime?
+  lastStatus    String?
+  lastJobId     String?
+  lastError     String?
+
+  updatedAt     DateTime @updatedAt
+
+  @@map("sync_state")
+}
+
+// Sprint 7 audit
 model ShipmentPackageAction {
-  id                 String   @id @default(cuid())
-  connectionId       String
-  shipmentPackageId  String
-  actionType         String   // update-tracking-number | change-cargo-provider | split | update-box-info
-  request            Json
-  response           Json?
-  status             String   // success | failed
-  error              String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(cuid())
+  connectionId      String
+  connection        Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  shipmentPackageId String
+  actionType        String   // update-tracking-number | change-cargo-provider | split | update-box-info
+  request           Json
+  response          Json?
+  status            String   // success | failed
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([connectionId, shipmentPackageId])
   @@map("shipment_package_action")

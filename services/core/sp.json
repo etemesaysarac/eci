@@ -1,0 +1,169 @@
+﻿{
+    "value":  [
+                  {
+                      "id":  "cmjvatks80005e6ukx92a8epn",
+                      "connectionId":  "cmjvat2w40000e6j473j38tno",
+                      "marketplace":  "trendyol",
+                      "shipmentPackageId":  "3503825999",
+                      "status":  null,
+                      "raw":  {
+                                  "id":  3503825999,
+                                  "isCod":  false,
+                                  "lines":  [
+                                                {
+                                                    "id":  5019576597,
+                                                    "sku":  "8683837002229",
+                                                    "price":  100,
+                                                    "amount":  100,
+                                                    "lineId":  5019576597,
+                                                    "barcode":  "8683837002229",
+                                                    "vatRate":  20,
+                                                    "discount":  0,
+                                                    "quantity":  1,
+                                                    "sellerId":  142312,
+                                                    "contentId":  560656025,
+                                                    "stockCode":  "8683837002229",
+                                                    "commission":  null,
+                                                    "merchantId":  142312,
+                                                    "tyDiscount":  0,
+                                                    "merchantSku":  "8683837002229",
+                                                    "productCode":  560656025,
+                                                    "productName":  "Pişirme Maşası Cımbızı Pratik Maşa Çelik Maşa 30cm | Profesyonel Şef Cımbızı 8683837002229, one size",
+                                                    "productSize":  "Tek Ebat",
+                                                    "currencyCode":  "TRY",
+                                                    "lineUnitPrice":  100,
+                                                    "vatBaseAmount":  20,
+                                                    "lineTyDiscount":  0,
+                                                    "discountDetails":  [
+                                                                            {
+                                                                                "lineItemPrice":  100,
+                                                                                "lineItemDiscount":  0,
+                                                                                "lineItemTyDiscount":  0,
+                                                                                "lineItemSellerDiscount":  0
+                                                                            }
+                                                                        ],
+                                                    "lineGrossAmount":  100,
+                                                    "salesCampaignId":  61,
+                                                    "lineTotalDiscount":  0,
+                                                    "productCategoryId":  2240,
+                                                    "lineSellerDiscount":  0,
+                                                    "fastDeliveryOptions":  [
+
+                                                                            ],
+                                                    "orderLineItemStatusName":  "ReadyToShip"
+                                                }
+                                            ],
+                                  "micro":  false,
+                                  "status":  "Created",
+                                  "createdBy":  "order-creation",
+                                  "orderDate":  1767273164725,
+                                  "taxNumber":  null,
+                                  "commercial":  false,
+                                  "customerId":  24890704,
+                                  "supplierId":  0,
+                                  "timeSlotId":  0,
+                                  "totalPrice":  100,
+                                  "grossAmount":  100,
+                                  "orderNumber":  "10839399924",
+                                  "warehouseId":  224903,
+                                  "3pByTrendyol":  false,
+                                  "currencyCode":  "TRY",
+                                  "deliveryType":  "normal",
+                                  "fastDelivery":  false,
+                                  "customerEmail":  "pf+2yx9kzjp@trendyolmail.com",
+                                  "totalDiscount":  0,
+                                  "identityNumber":  "11111111111",
+                                  "invoiceAddress":  {
+                                                         "id":  8219733957,
+                                                         "city":  "Konya",
+                                                         "phone":  null,
+                                                         "company":  "",
+                                                         "address1":  "Yenişehir mahallesi peri Sokak ParkMahal konutları G1-1 Meram Konya",
+                                                         "address2":  "",
+                                                         "cityCode":  42,
+                                                         "countyId":  0,
+                                                         "district":  "Meram",
+                                                         "fullName":  "Etem Saraç",
+                                                         "lastName":  "Saraç",
+                                                         "firstName":  "Etem",
+                                                         "stateName":  "",
+                                                         "countyName":  "",
+                                                         "districtId":  691,
+                                                         "postalCode":  "42000",
+                                                         "countryCode":  "TR",
+                                                         "fullAddress":  "Yenişehir mahallesi peri Sokak ParkMahal konutları G1-1 Meram Konya     Meram Konya",
+                                                         "addressLines":  {
+                                                                              "addressLine1":  "",
+                                                                              "addressLine2":  ""
+                                                                          },
+                                                         "neighborhood":  "Yenişehir Mah",
+                                                         "shortAddress":  "",
+                                                         "neighborhoodId":  54154
+                                                     },
+                                  "shipmentAddress":  {
+                                                          "id":  8219733958,
+                                                          "city":  "Konya",
+                                                          "phone":  null,
+                                                          "company":  "",
+                                                          "address1":  "Yenişehir mahallesi peri Sokak ParkMahal konutları G1-1 Meram Konya",
+                                                          "address2":  "",
+                                                          "cityCode":  42,
+                                                          "countyId":  0,
+                                                          "district":  "Meram",
+                                                          "fullName":  "Etem Saraç",
+                                                          "lastName":  "Saraç",
+                                                          "firstName":  "Etem",
+                                                          "stateName":  "",
+                                                          "countyName":  "",
+                                                          "districtId":  691,
+                                                          "postalCode":  "42000",
+                                                          "countryCode":  "TR",
+                                                          "fullAddress":  "Yenişehir mahallesi peri Sokak ParkMahal konutları G1-1 Meram Konya     Meram Konya",
+                                                          "addressLines":  {
+                                                                               "addressLine1":  "",
+                                                                               "addressLine2":  ""
+                                                                           },
+                                                          "neighborhood":  "Yenişehir Mah",
+                                                          "shortAddress":  "",
+                                                          "neighborhoodId":  54154
+                                                      },
+                                  "totalTyDiscount":  0,
+                                  "customerLastName":  "Saraç",
+                                  "fastDeliveryType":  "",
+                                  "giftBoxRequested":  false,
+                                  "lastModifiedDate":  1767264984371,
+                                  "originPackageIds":  null,
+                                  "packageHistories":  [
+                                                           {
+                                                               "status":  "Awaiting",
+                                                               "createdDate":  1767262366044
+                                                           },
+                                                           {
+                                                               "status":  "Created",
+                                                               "createdDate":  1767262367834
+                                                           }
+                                                       ],
+                                  "cargoProviderName":  "Aras Kargo Marketplace",
+                                  "customerFirstName":  "Etem",
+                                  "packageTotalPrice":  100,
+                                  "packageTyDiscount":  0,
+                                  "shipmentPackageId":  3503825999,
+                                  "agreedDeliveryDate":  1767607967829,
+                                  "deliveredByService":  false,
+                                  "originShipmentDate":  1767262366039,
+                                  "packageGrossAmount":  100,
+                                  "cargoTrackingNumber":  7260029305439338,
+                                  "deliveryAddressType":  "Shipment",
+                                  "packageTotalDiscount":  0,
+                                  "packageSellerDiscount":  0,
+                                  "shipmentPackageStatus":  "ReadyToShip",
+                                  "containsDangerousProduct":  false,
+                                  "estimatedDeliveryEndDate":  1767780764000,
+                                  "estimatedDeliveryStartDate":  1767262364000
+                              },
+                      "createdAt":  "2026-01-01T10:25:02.073Z",
+                      "updatedAt":  "2026-01-01T10:59:23.625Z"
+                  }
+              ],
+    "Count":  1
+}

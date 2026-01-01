@@ -69,9 +69,19 @@ function resolveIntegrationBaseUrl(cfg: TrendyolConfig): string {
   const override = cfg.baseUrl?.trim();
   if (override) return stripTrailingSlashes(override);
 
-  // keep current default behavior (apigw), allow opt-in sapigw
-  const base = cfg.preferSapigw ? envToSapigwBaseUrl(env) : envToIntegrationBaseUrl(env);
-  return stripTrailingSlashes(base);
+  // Prefer repo-level .env when present (root: TRENDYOL_BASE_URL / optional TRENDYOL_SAPIGW_BASE_URL)
+  // This matches how we run locally (C:\dev\eci\.env).
+  if (cfg.preferSapigw) {
+    const sapigw = process.env.TRENDYOL_SAPIGW_BASE_URL?.trim();
+    if (sapigw) return stripTrailingSlashes(sapigw);
+    return stripTrailingSlashes(envToSapigwBaseUrl(env));
+  }
+
+  const apigw = process.env.TRENDYOL_BASE_URL?.trim();
+  if (apigw) return stripTrailingSlashes(apigw);
+
+  // Final fallback: use the hardcoded mapping.
+  return stripTrailingSlashes(envToIntegrationBaseUrl(env));
 }
 
 function buildHeaders(cfg: TrendyolConfig) {

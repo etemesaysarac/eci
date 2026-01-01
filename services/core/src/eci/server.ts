@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { registerSprint7ActionRoutes } from "./server.sprint7";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -22,6 +23,7 @@ function syncLockKey(connectionId: string) {
 
 const app = express();
 app.use(express.json());
+registerSprint7ActionRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.
