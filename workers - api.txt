@@ -1,0 +1,15 @@
+> @eci/core@0.0.1 eci:worker
+> tsx src/eci/worker.ts
+
+[dotenv@17.2.3] injecting env (18) from .env -- tip: ­şøá´©Å  run anywhere with `dotenvx run -- yourcommand`
+[eci-worker] loaded .env from C:\dev\eci\services\core\.env (keys=18, override=true)
+[eci-worker] 2026-01-02T10:35:57.358Z scheduler enabled {"everyMs":60000,"minIntervalMs":300000}
+[eci-worker] 2026-01-02T10:35:57.360Z pid=23416 listening for jobs on queue: eci-jobs (redis://127.0.0.1:6379)
+[eci-worker] 2026-01-02T10:35:57.390Z scheduler tick {"connections":1,"everyMs":60000,"minIntervalMs":300000}
+[eci-worker] 2026-01-02T10:35:57.394Z scheduler skipped (only_due) {"connectionId":"cmjvat2w40000e6j473j38tno","lastAttemptAgoMs":32001}
+[eci-worker] 2026-01-02T10:35:57.394Z scheduler tick done {"durationMs":35}
+
+
+
+
+

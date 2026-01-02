@@ -2,36 +2,23 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 
-// Robust .env loading for Windows/tsx: try current working dir, then parent dirs.
-// This prevents scheduler env (SCHEDULER_EVERY_MS / SCHEDULER_ENABLED) from silently defaulting to 0/false.
+// Single-source .env loading (Sprint 7.1):
+// - If ECI_ENV_FILE is set, load that exact file.
+// - Otherwise load ".env" from the current working directory.
+// This removes ambiguity caused by loading multiple .env files with override=true.
 (() => {
-  // Load .env from multiple possible locations.
-  // We intentionally load *all* existing candidates from repo root -> current dir,
-  // so that a stale/partial .env in services/core does not hide scheduler vars in repo root.
-  const candidates = [
-    path.resolve(process.cwd(), ".env"),
-    path.resolve(process.cwd(), "../.env"),
-    path.resolve(process.cwd(), "../../.env"),
-    path.resolve(process.cwd(), "../../../.env"),
-  ];
+  const explicit = (process.env.ECI_ENV_FILE ?? "").trim();
+  const p = explicit ? path.resolve(explicit) : path.resolve(process.cwd(), ".env");
 
-  const existing = candidates.filter((p) => fs.existsSync(p));
-  if (existing.length === 0) {
-    console.log(`[eci-worker] .env not found (cwd=${process.cwd()})`);
+  if (!fs.existsSync(p)) {
+    console.log(`[eci-worker] .env not found at ${p} (cwd=${process.cwd()})`);
     return;
   }
 
-  // Load from farthest parent to closest (root -> cwd). Closest wins for overlapping keys.
-  const toLoad = [...new Set(existing)].reverse();
-
-  for (const p of toLoad) {
-    const res = dotenv.config({ path: p, override: true });
-    const n = res.parsed ? Object.keys(res.parsed).length : 0;
-    console.log(`[eci-worker] loaded .env from ${p} (keys=${n}, override=true)`);
-  }
+  const res = dotenv.config({ path: p, override: true });
+  const n = res.parsed ? Object.keys(res.parsed).length : 0;
+  console.log(`[eci-worker] loaded .env from ${p} (keys=${n}, override=true)`);
 })();
-
-
 import { randomUUID } from "crypto";
 
 import { Queue, Worker, type Job } from "bullmq";

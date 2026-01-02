@@ -1,0 +1,57 @@
+PS C:\dev\eci> cd C:\dev\eci
+PS C:\dev\eci> pwsh -ExecutionPolicy Bypass -File .\scripts\ps1\eci_oneclick_proof.ps1 `
+>>   -StartServices `
+>>   -ConnectionId "cmjvat2w40000e6j473j38tno" `
+>>   -PackageId "3504063748" `
+>>   -LineId 5019899160 `
+>>   -SkipUnsupplied
+ECI One-Click Proof 🚀
+ECI Doctor 🩺
+True
+True
+True
+True
+Bulunan .env: C:\dev\eci\services\core\.env
+Port 3001 LISTEN (API çalışıyor olabilir).
+
+✅ Doctor OK
+Servisler zaten çalışıyor (veya StartServices verilmedi).
+
+== Running actions test ==
+Actions test (7.2)...
+
+SUMMARY
+
+action                  http result   label
+------                  ---- ------   -----
+updateTrackingNumber     400 EXPECTED EXPECTED_400_TRACKING_NOT_ALLOWED
+updatePackage(Picking)   200 OK       OK
+updatePackage(Invoiced)  409 EXPECTED EXPECTED_409_STATUS_TRANSITION
+
+
+== Generating proof pack ==
+OK: proof generated -> C:\dev\eci\proofs\SPRINT_7_2_PROOF_20260102_143311.md
+
+DONE ✅
+PS C:\dev\eci> cd C:\dev\eci
+PS C:\dev\eci> $path = ".\scripts\ps1\eci_oneclick_proof.ps1"
+PS C:\dev\eci> $c = Get-Content $path -Raw
+PS C:\dev\eci>
+PS C:\dev\eci> # Doctor'dan hemen sonra kontrol ekleyelim: API yoksa StartServices zorunlu
+PS C:\dev\eci> if ($c -notmatch "API 3001 dinlemiyor") {
+>>   $c = $c -replace "pwsh -ExecutionPolicy Bypass -File \.\\scripts\\ps1\\eci_doctor\.ps1\s*",
+>> @'
+>> pwsh -ExecutionPolicy Bypass -File .\scripts\ps1\eci_doctor.ps1
+>>
+>> # Fail-fast: API yoksa bu koşu anlamsız (HTTP 0 üretir)
+>> if (-not (Port-Listening 3001) -and -not $StartServices) {
+>>   throw "API 3001 dinlemiyor. -StartServices ver ya da önce eci_run.ps1 ile API'yi başlat."
+>> }
+>>
+>> '@
+>> }
+PS C:\dev\eci>
+PS C:\dev\eci> Set-Content -Path $path -Value $c -Encoding UTF8
+PS C:\dev\eci> "OK: oneclick fail-fast eklendi."
+OK: oneclick fail-fast eklendi.
+PS C:\dev\eci>
