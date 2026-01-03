@@ -1,15 +1,21 @@
+PS C:\dev\eci\services\core> cd C:\dev\eci\services\core
+PS C:\dev\eci\services\core> npm run eci:api 2>&1 | Tee-Object -FilePath C:\dev\eci\api.log
+
+> @eci/core@0.0.1 eci:api
+> tsx src/eci/server.ts
+
+[eci-api] pid=7568 listening on http://127.0.0.1:3001
+[eci-api] 2026-01-03T10:13:08.597Z webhook enable requested {"connectionId":"cmjvat2w40000e6j473j38tno","endpointUrl":"https://eci.goeasyso.com/v1/webhooks/orders","authenticationType":"API_KEY"}
+[eci-api] 2026-01-03T10:13:28.711Z webhook enable requested {"connectionId":"cmjvat2w40000e6j473j38tno","endpointUrl":"https://eci.goeasyso.com/v1/webhooks/orders","authenticationType":"API_KEY"}
+
+
+PS C:\dev\eci\services\core> cd C:\dev\eci\services\core
+PS C:\dev\eci\services\core> npm run eci:worker 2>&1 | Tee-Object -FilePath C:\dev\eci\worker.log
+
 > @eci/core@0.0.1 eci:worker
 > tsx src/eci/worker.ts
 
-[dotenv@17.2.3] injecting env (18) from .env -- tip: ­şøá´©Å  run anywhere with `dotenvx run -- yourcommand`
-[eci-worker] loaded .env from C:\dev\eci\services\core\.env (keys=18, override=true)
-[eci-worker] 2026-01-02T10:35:57.358Z scheduler enabled {"everyMs":60000,"minIntervalMs":300000}
-[eci-worker] 2026-01-02T10:35:57.360Z pid=23416 listening for jobs on queue: eci-jobs (redis://127.0.0.1:6379)
-[eci-worker] 2026-01-02T10:35:57.390Z scheduler tick {"connections":1,"everyMs":60000,"minIntervalMs":300000}
-[eci-worker] 2026-01-02T10:35:57.394Z scheduler skipped (only_due) {"connectionId":"cmjvat2w40000e6j473j38tno","lastAttemptAgoMs":32001}
-[eci-worker] 2026-01-02T10:35:57.394Z scheduler tick done {"durationMs":35}
-
-
-
-
-
+[dotenv@17.2.3] injecting env (23) from .env -- tip: ­şæÑ sync secrets across teammates & machines: https://dotenvx.com/ops
+[eci-worker] loaded .env from C:\dev\eci\services\core\.env (keys=23, override=true)
+[eci-worker] 2026-01-03T10:08:13.369Z scheduler disabled {"SCHEDULER_ENABLED":false,"SCHEDULER_EVERY_MS":60000}
+[eci-worker] 2026-01-03T10:08:13.369Z pid=27468 listening for jobs on queue: eci-jobs (redis://127.0.0.1:6379)

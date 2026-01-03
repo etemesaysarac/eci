@@ -1,57 +1,65 @@
-PS C:\dev\eci> cd C:\dev\eci
-PS C:\dev\eci> pwsh -ExecutionPolicy Bypass -File .\scripts\ps1\eci_oneclick_proof.ps1 `
->>   -StartServices `
->>   -ConnectionId "cmjvat2w40000e6j473j38tno" `
->>   -PackageId "3504063748" `
->>   -LineId 5019899160 `
->>   -SkipUnsupplied
-ECI One-Click Proof 🚀
-ECI Doctor 🩺
-True
-True
-True
-True
-Bulunan .env: C:\dev\eci\services\core\.env
-Port 3001 LISTEN (API çalışıyor olabilir).
-
-✅ Doctor OK
-Servisler zaten çalışıyor (veya StartServices verilmedi).
-
-== Running actions test ==
-Actions test (7.2)...
-
-SUMMARY
-
-action                  http result   label
-------                  ---- ------   -----
-updateTrackingNumber     400 EXPECTED EXPECTED_400_TRACKING_NOT_ALLOWED
-updatePackage(Picking)   200 OK       OK
-updatePackage(Invoiced)  409 EXPECTED EXPECTED_409_STATUS_TRANSITION
-
-
-== Generating proof pack ==
-OK: proof generated -> C:\dev\eci\proofs\SPRINT_7_2_PROOF_20260102_143311.md
-
-DONE ✅
-PS C:\dev\eci> cd C:\dev\eci
-PS C:\dev\eci> $path = ".\scripts\ps1\eci_oneclick_proof.ps1"
-PS C:\dev\eci> $c = Get-Content $path -Raw
-PS C:\dev\eci>
-PS C:\dev\eci> # Doctor'dan hemen sonra kontrol ekleyelim: API yoksa StartServices zorunlu
-PS C:\dev\eci> if ($c -notmatch "API 3001 dinlemiyor") {
->>   $c = $c -replace "pwsh -ExecutionPolicy Bypass -File \.\\scripts\\ps1\\eci_doctor\.ps1\s*",
->> @'
->> pwsh -ExecutionPolicy Bypass -File .\scripts\ps1\eci_doctor.ps1
+PS C:\dev\eci> curl.exe -i http://127.0.0.1:3001/v1/connections/cmjvat2w40000e6j473j38tno/webhooks
 >>
->> # Fail-fast: API yoksa bu koşu anlamsız (HTTP 0 üretir)
->> if (-not (Port-Listening 3001) -and -not $StartServices) {
->>   throw "API 3001 dinlemiyor. -StartServices ver ya da önce eci_run.ps1 ile API'yi başlat."
->> }
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Content-Type: application/json; charset=utf-8
+Content-Length: 615
+ETag: W/"267-C3M0eIpioRw8R3WSDxdT4sE7jIE"
+Date: Sat, 03 Jan 2026 10:13:20 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+
+{"local":{"id":"cmjwwldy60001e6hckgr02g29","provider":"TRENDYOL","status":"ACTIVE","remoteWebhookId":"35275d28-da9d-437f-ac80-5c61a6168284","endpointUrl":"https://eci.goeasyso.com/v1/webhooks/orders","authenticationType":"API_KEY","subscribedStatuses":null,"createdAt":"2026-01-02T13:22:17.694Z","updatedAt":"2026-01-03T10:13:08.844Z"},"remote":[{"id":"35275d28-da9d-437f-ac80-5c61a6168284","createdDate":1767378663966,"lastModifiedDate":1767435188511,"url":"https://eci.goeasyso.com/v1/webhooks/orders","username":"","authenticationType":"API_KEY","status":"ACTIVE","subscribedStatuses":null,"storeFrontCode":""}]}
+PS C:\dev\eci> cd C:\dev\eci
+>> pwsh -ExecutionPolicy Bypass -File .\scripts\ps1\test_sprint8_webhook_enable.ps1 -ConnectionId cmjvat2w40000e6j473j38tno
 >>
+POST http://127.0.0.1:3001/v1/connections/cmjvat2w40000e6j473j38tno/webhooks/enable
+OK
+{
+  "ok": true,
+  "subscription": {
+    "id": "cmjwwldy60001e6hckgr02g29",
+    "provider": "TRENDYOL",
+    "status": "ACTIVE",
+    "remoteWebhookId": "35275d28-da9d-437f-ac80-5c61a6168284",
+    "endpointUrl": "https://eci.goeasyso.com/v1/webhooks/orders",
+    "authenticationType": "API_KEY"
+  },
+  "secrets": {
+    "apiKey": "HyitUekD3xu6MtdmkmrFlvwPq2W-DZ46"
+  },
+  "note": "Receiver expects auth headers. For API_KEY: send header 'x-api-key'. For BASIC: send HTTP Basic auth header."
+}
+
+NOTE:
+ - Receiver header for API_KEY:  x-api-key: <apiKey>
+ - Receiver header for BASIC:    Authorization: Basic base64(username:password)
+PS C:\dev\eci> $sql = @'
+>> select id, provider, "eventKey", "verifyStatus", "dedupHit", "receivedAt"
+>> from "WebhookEvent"
+>> order by "receivedAt" desc
+>> limit 10;
 >> '@
->> }
-PS C:\dev\eci>
-PS C:\dev\eci> Set-Content -Path $path -Value $c -Encoding UTF8
-PS C:\dev\eci> "OK: oneclick fail-fast eklendi."
-OK: oneclick fail-fast eklendi.
+>> $sql | docker exec -i infra-postgres-1 psql -U eci -d eci -v ON_ERROR_STOP=1
+>>
+            id             | provider |                                    eventKey                                    | verifyStatus | dedupHit |       receivedAt
+---------------------------+----------+--------------------------------------------------------------------------------+--------------+----------+-------------------------
+ cmjx03nv50001e6ggkvq45xsb | TRENDYOL | TRENDYOL:body:5e6347d7fa471b52e3a12e76bf6d503ed5b7f82e8e4b9b76af8d32929d2c0347 | ok           | t        | 2026-01-02 15:00:29.201
+(1 row)
+
+PS C:\dev\eci> $sql = @'
+>> select id, "type", status, "createdAt", summary
+>> from "Job"
+>> where "type" in ('TRENDYOL_WEBHOOK_EVENT', 'TRENDYOL_SYNC_ORDERS_TARGETED')
+>> order by "createdAt" desc
+>> limit 50;
+>> '@
+>> $sql | docker exec -i infra-postgres-1 psql -U eci -d eci -v ON_ERROR_STOP=1
+>>
+            id             |             type              | status  |        createdAt        |                                                                                                                                                                                                                                             summary                                                                                                                                            
+---------------------------+-------------------------------+---------+-------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ cmjx03nx70001e6aou3waevmy | TRENDYOL_SYNC_ORDERS_TARGETED | success | 2026-01-02 15:00:29.275 | {"status": "Created", "target": {"status": "Created", "orderNumber": "TEST_ORDER_123", "windowMinutes": 120, "shipmentPackageId": "TEST_PACKAGE_123"}, "endDate": 1767366029310, "fetched": 0, "windows": 1, "inserted": 0, "pageSize": 50, "targeted": true, "upserted": 0, "startDate": 1767358829310, "windowEnd": "2026-01-02T15:00:29.310Z", "countAfter": 2, "durationMs": 205, "countBefore": 2, "windowStart": "2026-01-02T13:00:29.310Z", "requestedPages": 1, "updatedOrExisting": 0}
+ cmjx03nvg0003e6gga8kjjlig | TRENDYOL_WEBHOOK_EVENT        | success | 2026-01-02 15:00:29.212 | {"reason": null, "enqueued": true, "provider": "TRENDYOL", "nextJobId": "cmjx03nx70001e6aou3waevmy", "durationMs": 16, "derivedTarget": {"status": "Created", "orderNumber": "TEST_ORDER_123", "shipmentPackageId": "TEST_PACKAGE_123"}, "windowMinutes": 120}
+(2 rows)
+
 PS C:\dev\eci>

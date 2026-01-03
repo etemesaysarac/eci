@@ -91,11 +91,27 @@ const eciQueue = new Queue("eci-jobs", { connection: redis });
 type JobData = {
   connectionId: string;
   jobId: string;
+
+  // Sync params (polling/scheduler/manual)
   params?: {
     status?: string;
     startDate?: number;
     endDate?: number;
     pageSize?: number;
+  } | null;
+
+  // Sprint 8: webhook raw event (receiver -> worker)
+  webhook?: {
+    provider: string;
+    payload: any;
+  } | null;
+
+  // Sprint 8: targeted sync hints (webhook event -> targeted job)
+  target?: {
+    orderNumber?: string;
+    shipmentPackageId?: string;
+    status?: string;
+    windowMinutes?: number;
   } | null;
 };
 
@@ -481,10 +497,147 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
   };
 }
 
+
+
+const SYNC_JOB_NAMES = new Set([
+  "TRENDYOL_SYNC_ORDERS",
+  "TRENDYOL_SYNC_SHIPMENT_PACKAGES", // backward-compat
+  "TRENDYOL_SYNC_ORDERS_TARGETED",
+]);
+
+function isSyncJob(name: string) {
+  return SYNC_JOB_NAMES.has(name);
+}
+
+function shouldRetryForJob(jobName: string, err: unknown): boolean {
+  if (jobName === "TRENDYOL_WEBHOOK_EVENT") return true; // transient DB/redis issues can happen
+  return shouldRetry(err);
+}
+
+function normalizeStatusForOrders(status?: string): string {
+  const s = (status ?? "").trim();
+  if (!s) return "Created";
+
+  // Trendyol orders endpoint expects e.g. Created / Picking / Invoiced / Shipped / Delivered / Cancelled / Returned ...
+  // If webhook sends lowercase/enum-like, normalize gently.
+  const map: Record<string, string> = {
+    created: "Created",
+    picking: "Picking",
+    invoiced: "Invoiced",
+    shipped: "Shipped",
+    delivered: "Delivered",
+    cancelled: "Cancelled",
+    returned: "Returned",
+    undefined: "Created",
+  };
+
+  const k = s.toLowerCase();
+  return map[k] ?? s;
+}
+
+function parseWebhookTarget(payload: any): { orderNumber?: string; shipmentPackageId?: string; status?: string } {
+  // Keep this permissive; we just want to derive a best-effort target.
+  const orderNumber =
+    payload?.orderNumber ??
+    payload?.orderNo ??
+    payload?.orderId ??
+    payload?.data?.orderNumber ??
+    payload?.data?.orderNo ??
+    payload?.data?.orderId ??
+    null;
+
+  const shipmentPackageId =
+    payload?.shipmentPackageId ??
+    payload?.packageId ??
+    payload?.shipmentId ??
+    payload?.data?.shipmentPackageId ??
+    payload?.data?.packageId ??
+    payload?.data?.shipmentId ??
+    null;
+
+  const status =
+    payload?.status ??
+    payload?.shipmentStatus ??
+    payload?.orderStatus ??
+    payload?.data?.status ??
+    payload?.data?.shipmentStatus ??
+    payload?.data?.orderStatus ??
+    null;
+
+  return {
+    orderNumber: orderNumber != null ? String(orderNumber) : undefined,
+    shipmentPackageId: shipmentPackageId != null ? String(shipmentPackageId) : undefined,
+    status: status != null ? String(status) : undefined,
+  };
+}
+
+type TargetSync = {
+  orderNumber?: string;
+  shipmentPackageId?: string;
+  status?: string;
+  windowMinutes?: number;
+};
+
+async function enqueueTrendyolSyncOrdersTargeted(connectionId: string, target: TargetSync): Promise<EnqueueResult> {
+  const lockKey = syncLockKey(connectionId);
+  const pending = `pending:${randomUUID()}`;
+
+  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
+  if (acquired !== "OK") return { enqueued: false, reason: "sync_in_progress" };
+
+  let jobRow: { id: string } | null = null;
+  try {
+    jobRow = await prisma.job.create({
+      data: {
+        connectionId,
+        type: "TRENDYOL_SYNC_ORDERS_TARGETED",
+        status: "queued",
+      },
+      select: { id: true },
+    });
+
+    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
+
+    await eciQueue.add(
+      "TRENDYOL_SYNC_ORDERS_TARGETED",
+      { jobId: jobRow.id, connectionId, target },
+      {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      }
+    );
+
+    return { enqueued: true, jobId: jobRow.id };
+  } catch (e: any) {
+    const errMsg = String(e?.message ?? e);
+
+    if (jobRow?.id) {
+      try {
+        await prisma.job.update({
+          where: { id: jobRow.id },
+          data: { status: "failed", finishedAt: new Date(), error: errMsg },
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    try {
+      await compareDel(lockKey, jobRow?.id ?? pending);
+    } catch {
+      // ignore
+    }
+
+    return { enqueued: false, reason: "error", error: errMsg };
+  }
+}
+
 const worker = new Worker(
   "eci-jobs",
   async (job: Job<JobData, any, string>) => {
-    const { connectionId, jobId, params } = job.data as JobData;
+    const { connectionId, jobId, params, webhook, target } = job.data as JobData;
 
     const attempt = job.attemptsMade + 1;
     const maxAttempts = job.opts.attempts ?? 1;
@@ -497,6 +650,8 @@ const worker = new Worker(
       maxAttempts,
     });
 
+    const isSync = isSyncJob(job.name);
+
     // startedAt'i sadece ilk denemede set etmeye çalış
     await prisma.job.update({
       where: { id: jobId },
@@ -507,81 +662,33 @@ const worker = new Worker(
         error: null,
       },
     });
-    await refreshSyncLock(connectionId, jobId);
 
+    // Lock refresh only matters for sync jobs (scheduler/targeted)
+    if (isSync) {
+      await refreshSyncLock(connectionId, jobId);
+    }
 
     const attemptAt = new Date();
 
-    // Sprint 5: ensure per-connection sync_state exists and mark RUNNING
-    await prisma.syncState.upsert({
-      where: { connectionId },
-      create: {
-        connectionId,
-        lastAttemptAt: attemptAt,
-        lastStatus: "RUNNING",
-        lastJobId: jobId,
-        lastError: null,
-      },
-      update: {
-        lastAttemptAt: attemptAt,
-        lastStatus: "RUNNING",
-        lastJobId: jobId,
-        lastError: null,
-      },
-    });
-
-    // Determine sync window: manual params override; otherwise auto window from lastSuccessAt
-    const state = await prisma.syncState.findUnique({
-      where: { connectionId },
-      select: { lastSuccessAt: true },
-    });
-
-const autoRaw: any = computeSyncWindow({
-  lastSuccessAt: state?.lastSuccessAt ?? null,
-  // bazı implementasyonlar `now` bekliyor; scheduler'da undefined kalmasın
-  now: new Date(),
-  overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
-  safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
-  bootstrapHours: ECI_SYNC_BOOTSTRAP_HOURS,
-  maxWindowDays: ECI_SYNC_MAX_WINDOW_DAYS,
-} as any);
-
-const fallbackEnd = Date.now() - ECI_SYNC_SAFETY_DELAY_MINUTES * 60_000;
-const fallbackStart = fallbackEnd - ECI_SYNC_BOOTSTRAP_HOURS * 3600_000;
-
-const autoStart =
-  typeof autoRaw?.startDate === "number"
-    ? autoRaw.startDate
-    : autoRaw?.windowStart instanceof Date
-      ? autoRaw.windowStart.getTime()
-      : Number.isFinite(Number(autoRaw?.windowStart))
-        ? Number(autoRaw.windowStart)
-        : fallbackStart;
-
-const autoEnd =
-  typeof autoRaw?.endDate === "number"
-    ? autoRaw.endDate
-    : autoRaw?.windowEnd instanceof Date
-      ? autoRaw.windowEnd.getTime()
-      : Number.isFinite(Number(autoRaw?.windowEnd))
-        ? Number(autoRaw.windowEnd)
-        : fallbackEnd;
-
-const auto = { startDate: autoStart, endDate: autoEnd };
-
-    const hasManualStart = typeof params?.startDate === "number";
-    const hasManualEnd = typeof params?.endDate === "number";
-
-    const windowStart = hasManualStart ? (params!.startDate as number) : auto.startDate;
-    const windowEnd = hasManualEnd ? (params!.endDate as number) : auto.endDate;
-
-    const usedAutoWindow = !(hasManualStart || hasManualEnd);
-
-    const effectiveParams: JobData["params"] = {
-      ...(params ?? {}),
-      startDate: windowStart,
-      endDate: windowEnd,
-    };
+    if (isSync) {
+      // Sprint 5: ensure per-connection sync_state exists and mark RUNNING
+      await prisma.syncState.upsert({
+        where: { connectionId },
+        create: {
+          connectionId,
+          lastAttemptAt: attemptAt,
+          lastStatus: "RUNNING",
+          lastJobId: jobId,
+          lastError: null,
+        },
+        update: {
+          lastAttemptAt: attemptAt,
+          lastStatus: "RUNNING",
+          lastJobId: jobId,
+          lastError: null,
+        },
+      });
+    }
 
     const t0 = Date.now();
 
@@ -591,92 +698,202 @@ const auto = { startDate: autoStart, endDate: autoEnd };
 
       const cfg = normalizeConfig(decryptJson<TrendyolConfig>(conn.configEnc));
 
-      let summary: any;
+      let summary: any = null;
+
       switch (job.name) {
         case "TRENDYOL_SYNC_ORDERS":
+        case "TRENDYOL_SYNC_SHIPMENT_PACKAGES": {
+          // Determine sync window: manual params override; otherwise auto window from lastSuccessAt
+          const state = await prisma.syncState.findUnique({
+            where: { connectionId },
+            select: { lastSuccessAt: true },
+          });
+
+          const autoRaw: any = computeSyncWindow({
+            lastSuccessAt: state?.lastSuccessAt ?? null,
+            now: new Date(),
+            overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
+            safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
+            bootstrapHours: ECI_SYNC_BOOTSTRAP_HOURS,
+            maxWindowDays: ECI_SYNC_MAX_WINDOW_DAYS,
+          } as any);
+
+          const fallbackEnd = Date.now() - ECI_SYNC_SAFETY_DELAY_MINUTES * 60_000;
+          const fallbackStart = fallbackEnd - ECI_SYNC_BOOTSTRAP_HOURS * 3600_000;
+
+          const autoStart =
+            typeof autoRaw?.startDate === "number"
+              ? autoRaw.startDate
+              : autoRaw?.windowStart instanceof Date
+                ? autoRaw.windowStart.getTime()
+                : Number.isFinite(Number(autoRaw?.windowStart))
+                  ? Number(autoRaw.windowStart)
+                  : fallbackStart;
+
+          const autoEnd =
+            typeof autoRaw?.endDate === "number"
+              ? autoRaw.endDate
+              : autoRaw?.windowEnd instanceof Date
+                ? autoRaw.windowEnd.getTime()
+                : Number.isFinite(Number(autoRaw?.windowEnd))
+                  ? Number(autoRaw.windowEnd)
+                  : fallbackEnd;
+
+          const hasManualStart = typeof params?.startDate === "number";
+          const hasManualEnd = typeof params?.endDate === "number";
+
+          const windowStart = hasManualStart ? (params!.startDate as number) : autoStart;
+          const windowEnd = hasManualEnd ? (params!.endDate as number) : autoEnd;
+
+          const usedAutoWindow = !(hasManualStart || hasManualEnd);
+
+          const effectiveParams: JobData["params"] = {
+            ...(params ?? {}),
+            startDate: windowStart,
+            endDate: windowEnd,
+          };
+
           summary = await syncOrders(connectionId, cfg, effectiveParams ?? undefined);
+
+          summary = {
+            ...summary,
+            windowStart: new Date(windowStart).toISOString(),
+            windowEnd: new Date(windowEnd).toISOString(),
+            durationMs: Date.now() - t0,
+            usedAutoWindow,
+            overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
+            safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
+          };
+
           break;
-        // Backward-compat: eski job adı.
-        case "TRENDYOL_SYNC_SHIPMENT_PACKAGES":
+        }
+
+        case "TRENDYOL_WEBHOOK_EVENT": {
+          const payload = (webhook as any)?.payload ?? null;
+          const derived = parseWebhookTarget(payload);
+
+          // Audit note: if we cannot derive any target identifiers, we still enqueue a normal targeted sync with a wide window.
+          const windowMinutes = Number(process.env.ECI_WEBHOOK_TARGET_WINDOW_MINUTES ?? 10080); // default 7 days
+
+          const r = await enqueueTrendyolSyncOrdersTargeted(connectionId, {
+            ...derived,
+            windowMinutes,
+          });
+
+          summary = {
+            provider: (webhook as any)?.provider ?? "TRENDYOL",
+            derivedTarget: derived,
+            windowMinutes,
+            enqueued: r.enqueued,
+            nextJobId: (r as any).jobId ?? null,
+            reason: (r as any).reason ?? null,
+            durationMs: Date.now() - t0,
+          };
+
+          break;
+        }
+
+        case "TRENDYOL_SYNC_ORDERS_TARGETED": {
+          const t: TargetSync = (target ?? {}) as any;
+
+          const windowMinutes = Number(t.windowMinutes ?? process.env.ECI_WEBHOOK_TARGET_WINDOW_MINUTES ?? 10080); // default 7 days
+          const endDate = Date.now();
+          const startDate = endDate - Math.max(5, windowMinutes) * 60_000;
+
+          const effectiveParams: JobData["params"] = {
+            ...(params ?? {}),
+            status: normalizeStatusForOrders(t.status),
+            startDate,
+            endDate,
+          };
+
           summary = await syncOrders(connectionId, cfg, effectiveParams ?? undefined);
+
+          summary = {
+            ...summary,
+            targeted: true,
+            target: {
+              orderNumber: t.orderNumber ?? null,
+              shipmentPackageId: t.shipmentPackageId ?? null,
+              status: normalizeStatusForOrders(t.status),
+              windowMinutes,
+            },
+            windowStart: new Date(startDate).toISOString(),
+            windowEnd: new Date(endDate).toISOString(),
+            durationMs: Date.now() - t0,
+          };
+
           break;
+        }
+
         default:
           throw new Error(`unknown job: ${job.name}`);
       }
 
+      // Success path
+      if (isSync) {
+        await prisma.syncState.upsert({
+          where: { connectionId },
+          create: {
+            connectionId,
+            lastSuccessAt: new Date(),
+            lastStatus: "SUCCESS",
+            lastJobId: jobId,
+            lastError: null,
+            lastAttemptAt: attemptAt,
+          },
+          update: {
+            lastSuccessAt: new Date(),
+            lastStatus: "SUCCESS",
+            lastJobId: jobId,
+            lastError: null,
+          },
+        });
 
-      const durationMs = Date.now() - t0;
-
-      summary = {
-        ...summary,
-        windowStart: new Date(windowStart).toISOString(),
-        windowEnd: new Date(windowEnd).toISOString(),
-        durationMs,
-        usedAutoWindow,
-        overlapMinutes: ECI_SYNC_OVERLAP_MINUTES,
-        safetyDelayMinutes: ECI_SYNC_SAFETY_DELAY_MINUTES,
-      };
-
-      // Sprint 5: update lastSuccessAt only on SUCCESS
-      await prisma.syncState.upsert({
-        where: { connectionId },
-        create: {
+        log("SYNC_SUMMARY", {
           connectionId,
-          lastSuccessAt: new Date(),
-          lastStatus: "SUCCESS",
-          lastJobId: jobId,
-          lastError: null,
-          lastAttemptAt: attemptAt,
-        },
-        update: {
-          lastSuccessAt: new Date(),
-          lastStatus: "SUCCESS",
-          lastJobId: jobId,
-          lastError: null,
-        },
-      });
-
-      log("SYNC_SUMMARY", {
-        connectionId,
-        jobId,
-        windowStart: summary.windowStart,
-        windowEnd: summary.windowEnd,
-        fetched: (summary as any)?.fetched,
-        upserted: (summary as any)?.upserted,
-        inserted: (summary as any)?.inserted,
-        shipUpserted: (summary as any)?.shipUpserted,
-        durationMs,
-        usedAutoWindow,
-      });
+          jobId,
+          fetched: (summary as any)?.fetched,
+          upserted: (summary as any)?.upserted,
+          inserted: (summary as any)?.inserted,
+          shipUpserted: (summary as any)?.shipUpserted,
+          durationMs: (summary as any)?.durationMs,
+          targeted: (summary as any)?.targeted ?? false,
+        });
+      }
 
       await prisma.job.update({
         where: { id: jobId },
         data: { status: "success", finishedAt: new Date(), summary, error: null },
       });
-      await releaseSyncLock(connectionId, jobId);
 
-      log("job success", { name: job.name, jobId, connectionId, summary });
+      if (isSync) {
+        await releaseSyncLock(connectionId, jobId);
+      }
+
+      log("job success", { name: job.name, jobId, connectionId });
       return summary;
     } catch (err: any) {
-      const retrying = shouldRetry(err) && attempt < maxAttempts;
+      const retrying = shouldRetryForJob(job.name, err) && attempt < maxAttempts;
 
-      // Sprint 5: mark state as RETRYING/FAIL. Use upsert to avoid "record not found" errors.
-      await prisma.syncState.upsert({
-        where: { connectionId },
-        create: {
-          connectionId,
-          lastAttemptAt: new Date(),
-          lastStatus: retrying ? "RETRYING" : "FAIL",
-          lastJobId: jobId,
-          lastError: String(err?.message ?? err),
-        },
-        update: {
-          lastAttemptAt: new Date(),
-          lastStatus: retrying ? "RETRYING" : "FAIL",
-          lastJobId: jobId,
-          lastError: String(err?.message ?? err),
-        },
-      });
+      if (isSync) {
+        await prisma.syncState.upsert({
+          where: { connectionId },
+          create: {
+            connectionId,
+            lastAttemptAt: new Date(),
+            lastStatus: retrying ? "RETRYING" : "FAIL",
+            lastJobId: jobId,
+            lastError: String(err?.message ?? err),
+          },
+          update: {
+            lastAttemptAt: new Date(),
+            lastStatus: retrying ? "RETRYING" : "FAIL",
+            lastJobId: jobId,
+            lastError: String(err?.message ?? err),
+          },
+        });
+      }
 
       await prisma.job.update({
         where: { id: jobId },
@@ -697,16 +914,17 @@ const auto = { startDate: autoStart, endDate: autoEnd };
         error: String(err?.message ?? err),
       });
 
-      // ÖNEMLİ:
-      // - retrying ise throw ederek BullMQ'nun bir sonraki denemeyi planlamasını sağlarız
-      // - retrying değilse throw ETMEYİZ: 401/403 gibi credential hatalarında BullMQ tekrar tekrar vurmasın
-      if (!retrying) await releaseSyncLock(connectionId, jobId);
+      // Retry policy:
+      // - if retrying => throw to let BullMQ schedule next attempt
+      // - if not retrying => do not throw (avoid hammering credentials/business errors)
+      if (!retrying && isSync) await releaseSyncLock(connectionId, jobId);
       if (retrying) throw err;
       return { failed: true, error: String(err?.message ?? err) };
     }
   },
   { connection: redis }
 );
+
 
 worker.on("completed", (job) => {
   log("completed event", {

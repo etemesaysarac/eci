@@ -164,6 +164,44 @@ async function tryGet(url: string, cfg: TrendyolConfig) {
   };
 }
 
+export type TrendyolFetchInit = {
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  headers?: Record<string, string>;
+  body?: any; // string or object
+  params?: Record<string, any>;
+};
+
+/**
+ * Sprint 8 helper: generic Trendyol request wrapper (used by webhook endpoints).
+ * - Always sends required Trendyol headers (Authorization + User-Agent + x-agentname).
+ * - Returns response body (JSON) on 2xx.
+ * - Throws with a helpful snippet on non-2xx (includes 4xx business errors).
+ */
+export async function trendyolFetch<T = any>(
+  cfg: TrendyolConfig,
+  url: string,
+  init?: TrendyolFetchInit,
+): Promise<T> {
+  const method = (init?.method ?? "GET") as string;
+  const headers = { ...buildHeaders(cfg), ...(init?.headers ?? {}) };
+
+  const res = await axios.request({
+    url,
+    method,
+    headers,
+    params: init?.params,
+    data: init?.body,
+    timeout: typeof cfg.timeoutMs === "number" ? cfg.timeoutMs : undefined,
+    validateStatus: () => true,
+  });
+
+  if (res.status >= 200 && res.status < 300) return res.data as T;
+
+  // Provide payload snippet for debugging (truncated to keep logs readable)
+  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status}) :: ${snippet(res.data)}`);
+}
+
+
 export type OrdersQuery = {
   status?: string;
   page?: number;

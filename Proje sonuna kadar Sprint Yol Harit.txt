@@ -1,0 +1,143 @@
+Sprint 8 — Webhook (gerçek zamanlı) + Polling azaltma
+
+Amaç: “5 dk’da bir çek” yerine event-driven yaklaşım.
+
+Trendyol:
+
+webhook create/list/activate/deactivate/delete
+
+webhook model (full order datası gönderme yaklaşımı)
+
+Bizde:
+
+API: POST /v1/connections/:id/webhooks/enable
+
+Receiver: POST /v1/webhooks/trendyol (raw body + doğrulama/allowlist + replay koruması)
+
+Worker: webhook event → enqueue syncOrders (targeted sync)
+
+Kabul test:
+
+webhook gelince job otomatik oluşuyor
+
+aynı event tekrarı duplicate iş üretmiyor.
+
+Trendyol Geliştiricileri
++1
+
+Sprint 9 — Product Katalog (ürün listeleme + create/update + batch)
+
+Amaç: panelin “ürün” ekranını beslemek + ürün gönderme.
+
+Trendyol product:
+
+categories/attributes/values lookup
+
+brands lookup
+
+product create/update/list
+
+batchrequests status
+
+unapproved + archive state
+
+content bulk update
+
+Bizde:
+
+DB: Product, ProductVariant/Sku, ProductBatchRequest
+
+Worker job: SYNC_PRODUCTS, PUSH_PRODUCT, BULK_CONTENT_UPDATE
+
+API: read-only + command endpoint’ler
+
+Sprint 10 — Inventory (price & stock)
+
+Amaç: müşterinin “stok/fiyat eşitleme” beklentisini karşılamak.
+
+Trendyol inventory price-and-inventory endpoint
+
+Bizde:
+
+DB: InventorySnapshot veya SkuStockPrice
+
+Worker: incremental stock/price push + (opsiyonel) scheduled reconcile
+
+Kabul: aynı SKU 10 kere güncellense de idempotent.
+
+Sprint 11 — Fatura Linki / Seller Invoice / Label
+
+Amaç: gerçek operasyon: fatura/etiket akışı.
+
+Trendyol sellers:
+
+addresses
+
+commonlabel (etiket)
+
+seller-invoice-links + file işlemleri
+
+Bizde:
+
+storage stratejisi (local/minio/s3)
+
+API: “etiket indir”, “fatura linki bas”, “invoice file sakla”
+
+Panelin “kargo etiketi yazdır” butonu artık anlamlı hale gelir.
+
+Sprint 12 — Claims / İade
+
+Amaç: iade gelince panelde görün, aksiyon al.
+
+Trendyol order claims:
+
+claim-issue-reasons
+
+claims list/create
+
+approve/reject/issue akışları
+
+Bizde:
+
+DB: Claim, ClaimItem, state machine
+
+Worker job: SYNC_CLAIMS + “approve/reject” command job’ları
+
+(Trendyol “Nasıl entegrasyon yaparım” dokümanında iade entegrasyon akışı açıkça anlatılıyor.) 
+Trendyol Geliştiricileri
+
+Sprint 13 — QnA (soru/cevap)
+
+Amaç: pazar yeri sorularını panelden yönetmek.
+
+Trendyol QnA endpoints
+
+Bizde:
+
+DB: Question, Answer
+
+Worker: sync questions + post answer
+
+Sprint 14 — Finance / Mutabakat
+
+Amaç: “ne sattım / ne kesildi / ne yattı” raporu.
+
+settlements, other financials, cargo invoice items
+
+Bizde:
+
+DB: Settlement, FinancialTxn
+
+Basit rapor endpoint’leri (panel grafikleri için)
+
+Sprint 15 — Panel v1 (artık gerçek panel)
+
+Amaç: Bugünkü read-only JSON endpoint’lerini “gerçek ekrana” dökmek.
+
+Connections list/status
+
+Jobs recent + job detail
+
+Orders + ShipmentPackages list/detail
+
+Action buttons (Sprint 7 command endpoint’lerini çağırır)

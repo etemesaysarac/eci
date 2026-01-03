@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { registerSprint7ActionRoutes } from "./server.sprint7";
+import { registerSprint8WebhookRoutes } from "./server.sprint8";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -22,8 +23,16 @@ function syncLockKey(connectionId: string) {
 }
 
 const app = express();
-app.use(express.json());
+// Keep raw body for webhook verification (Sprint 8)
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  })
+);
 registerSprint7ActionRoutes(app);
+registerSprint8WebhookRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.
@@ -35,6 +44,14 @@ const asyncHandler =
 
 app.get("/", (_req: Request, res: Response) => res.status(200).send("ECI Core OK"));
 app.get("/health", (_req: Request, res: Response) => res.json({ ok: true }));
+
+// Sprint 8 helper: allow GET/HEAD checks for webhook URL validation (Trendyol may verify reachability).
+// POST is still protected by x-api-key / Basic auth inside server.sprint8.ts.
+app.get("/v1/webhooks/trendyol", (_req: Request, res: Response) => res.status(200).json({ ok: true }));
+app.head("/v1/webhooks/trendyol", (_req: Request, res: Response) => res.sendStatus(200));
+app.get("/v1/webhooks/orders", (_req: Request, res: Response) => res.status(200).json({ ok: true }));
+app.head("/v1/webhooks/orders", (_req: Request, res: Response) => res.sendStatus(200));
+
 
 // -----------------------------
 // Schemas

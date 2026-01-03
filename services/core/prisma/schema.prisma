@@ -24,7 +24,10 @@ model Connection {
   shipmentPackages      ShipmentPackage[]
   syncState             SyncState?
   shipmentPackageActions ShipmentPackageAction[]
+  webhookSubscriptions WebhookSubscription[]
+  webhookEvents        WebhookEvent[]
 }
+
 
 model Job {
   id           String   @id @default(cuid())
@@ -106,4 +109,67 @@ model ShipmentPackageAction {
 
   @@index([connectionId, shipmentPackageId])
   @@map("shipment_package_action")
+}
+
+// Sprint 8: Webhooks (subscription + event audit)
+model WebhookSubscription {
+  id                 String   @id @default(cuid())
+  connectionId        String
+  connection          Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  provider            String   // "TRENDYOL"
+  remoteWebhookId     String?
+  status              String   @default("ACTIVE") // ACTIVE | PASSIVE
+
+  endpointUrl         String
+  authenticationType  String   // API_KEY | BASIC_AUTHENTICATION
+
+  // Lookup için hash alanları (plaintext tutmuyoruz)
+  apiKeyHash          String?
+  basicUsername       String?
+  basicPasswordHash   String?
+
+  // Opsiyonel: subscribed statuses (audit)
+  subscribedStatuses  Json?
+
+  // Secret'ları şifreli saklamak için (apiKey/username/password)
+  secretsEnc          String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  events              WebhookEvent[]
+
+  @@unique([connectionId, provider], name: "connectionId_provider")
+  @@index([remoteWebhookId])
+  @@index([apiKeyHash])
+  @@index([basicUsername])
+}
+
+model WebhookEvent {
+  id              String   @id @default(cuid())
+  connectionId     String
+  connection       Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  subscriptionId   String
+  subscription     WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  provider         String   // "TRENDYOL"
+  receivedAt       DateTime @default(now())
+
+  eventKey         String   // unique (dedup)
+  bodyHash         String
+  headers          Json?
+  rawBody          Json?
+  rawBodyText      String?
+
+  verifyStatus     String   @default("ok") // ok | fail
+  dedupHit         Boolean  @default(false)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([eventKey])
+  @@index([connectionId, receivedAt])
+  @@index([subscriptionId, receivedAt])
 }
