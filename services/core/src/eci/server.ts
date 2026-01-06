@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { registerSprint7ActionRoutes } from "./server.sprint7";
 import { registerSprint8WebhookRoutes } from "./server.sprint8";
+import { registerSprint9ProductCatalogRoutes } from "./server.sprint9";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -33,6 +34,7 @@ app.use(
 );
 registerSprint7ActionRoutes(app);
 registerSprint8WebhookRoutes(app);
+registerSprint9ProductCatalogRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.
@@ -130,8 +132,8 @@ function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
     token: tokenRaw ? tokenRaw.replace(/^Basic\s+/i, "").trim() : undefined,
     apiKey,
     apiSecret,
-    agentName: String(cfg.agentName ?? "SoXYZ").trim(),
-    integrationName: String(cfg.integrationName ?? "SoXYZ-ECI").trim(),
+    agentName: String(cfg.agentName ?? "Easyso").trim(),
+    integrationName: String(cfg.integrationName ?? "ECI").trim(),
     baseUrl: baseUrlRaw ? baseUrlRaw.replace(/\/+$/, "") : undefined,
   };
 }

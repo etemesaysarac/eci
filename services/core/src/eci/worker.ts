@@ -297,8 +297,8 @@ function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
     token: tokenRaw ? tokenRaw.replace(/^Basic\s+/i, "").trim() : undefined,
     apiKey,
     apiSecret,
-    agentName: String(cfg.agentName ?? "SoXYZ").trim(),
-    integrationName: String(cfg.integrationName ?? "SoXYZ-ECI").trim(),
+    agentName: String(cfg.agentName ?? process.env.TRENDYOL_AGENT_NAME ?? "Easyso").trim(),
+    integrationName: String(cfg.integrationName ?? process.env.TRENDYOL_INTEGRATION_NAME ?? "ECI").trim(),
   };
 }
 

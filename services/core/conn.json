@@ -1,13 +1,13 @@
 ﻿{
   "type": "trendyol",
-  "name": "prod-trendyol-apigw",
+  "name": "Trendyol PROD",
   "config": {
     "sellerId": "142312",
     "env": "prod",
-    "baseUrl": "https://apigw.trendyol.com",
-    "apiKey": "EKNjp5j8Snh6Yctl9OS4",
-    "apiSecret": "92AvsUG9RvfAJIROdfjY",
-    "agentName": "SoXYZ",
-    "integrationName": "SoXYZ-ECI"
+    "apiKey": "YOUR_API_KEY",
+    "apiSecret": "YOUR_API_SECRET",
+    "agentName": "Easyso",
+    "integrationName": "ECI",
+    "preferSapigw": true
   }
 }

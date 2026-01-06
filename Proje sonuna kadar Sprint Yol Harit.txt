@@ -25,6 +25,9 @@ aynı event tekrarı duplicate iş üretmiyor.
 Trendyol Geliştiricileri
 +1
 
+
+
+
 Sprint 9 — Product Katalog (ürün listeleme + create/update + batch)
 
 Amaç: panelin “ürün” ekranını beslemek + ürün gönderme.

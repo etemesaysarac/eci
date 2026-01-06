@@ -57,7 +57,7 @@ model Order {
   updatedAt     DateTime @updatedAt
 
   // Prisma name kept for code: where: { connectionId_marketplace_channelOrderId: {...} }
-  // DB constraint already exists in migration(so_xyz) under this name.
+  // DB constraint already exists in initial migration under this name.
   @@unique([connectionId, marketplace, channelOrderId], name: "connectionId_marketplace_channelOrderId", map: "Order_connectionId_marketplace_channelOrderId_key")
   @@index([connectionId])
 }

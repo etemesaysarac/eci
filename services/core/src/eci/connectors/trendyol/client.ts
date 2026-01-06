@@ -86,8 +86,8 @@ function resolveIntegrationBaseUrl(cfg: TrendyolConfig): string {
 
 function buildHeaders(cfg: TrendyolConfig) {
   const sellerId = String(cfg.sellerId ?? "").trim();
-  const agentName = String(cfg.agentName ?? "SoXYZ").trim();
-  const integrationName = String(cfg.integrationName ?? "SoXYZ-ECI").trim();
+  const agentName = String(cfg.agentName ?? "Easyso").trim();
+  const integrationName = String(cfg.integrationName ?? "ECI").trim();
   const basic = basicFromConfig(cfg);
 
   return {
@@ -245,7 +245,7 @@ export async function trendyolGetOrders(cfg: TrendyolConfig, q: OrdersQuery) {
 
   if (res.status >= 200 && res.status < 300) return res.data;
 
-  throw new Error(`Trendyol orders failed (${res.status}) ${url} :: ${snippet(res.data)}`);
+  throw new Error(`Trendyol request failed (${res.status}) ${url} :: ${snippet(res.data)}`);
 }
 
 // Backward-compat: eski isim halen import eden yerler için.
@@ -256,6 +256,59 @@ export const trendyolGetShipmentPackages = trendyolGetOrders;
  * Varsayılan: sadece /orders dener.
  * Debug istersen: cfg.probeLegacy=true yapınca /shipment-packages kök endpoint’ini de ayrıca dener.
  */
+
+
+// -----------------------------
+// Sprint 9 — Product Catalog (Read Path)
+// -----------------------------
+
+export type TrendyolBrandsQuery = {
+  page?: number;
+  size?: number;
+};
+
+export async function trendyolGetBrands(cfg: TrendyolConfig, q: TrendyolBrandsQuery = {}) {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const url = `${base}/integration/product/brands`;
+  return trendyolFetch(cfg, url, { params: { page: q.page ?? 0, size: q.size ?? 50 } });
+}
+
+export async function trendyolGetProductCategories(cfg: TrendyolConfig) {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const url = `${base}/integration/product/product-categories`;
+  return trendyolFetch(cfg, url);
+}
+
+export async function trendyolGetCategoryAttributes(cfg: TrendyolConfig, categoryId: string) {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const url = `${base}/integration/product/product-categories/${encodeURIComponent(String(categoryId))}/attributes`;
+  return trendyolFetch(cfg, url);
+}
+
+export type TrendyolProductFilterQuery = {
+  approved?: boolean;
+  page?: number;
+  size?: number;
+  barcode?: string;
+  productCode?: string;
+};
+
+export async function trendyolGetProducts(cfg: TrendyolConfig, q: TrendyolProductFilterQuery = {}) {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const sellerId = String(cfg.sellerId ?? "").trim();
+  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products`;
+
+  const params: Record<string, any> = {
+    page: q.page ?? 0,
+    size: q.size ?? 50,
+  };
+
+  if (typeof q.approved === "boolean") params.approved = q.approved;
+  if (q.barcode) params.barcode = q.barcode;
+  if (q.productCode) params.productCode = q.productCode;
+
+  return trendyolFetch(cfg, url, { params });
+}
 export async function trendyolProbeShipmentPackages(cfg: TrendyolConfig) {
 
   // Connection test / smoke test için: çalışan kapıdan (orders) probe yapıyoruz.
