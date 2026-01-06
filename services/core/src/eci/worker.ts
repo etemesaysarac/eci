@@ -21,6 +21,7 @@ import dotenv from "dotenv";
 })();
 import { randomUUID } from "crypto";
 
+import { Prisma } from "@prisma/client";
 import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "./prisma";
@@ -28,6 +29,7 @@ import { computeSyncWindow } from "./sync/window";
 import { decryptJson } from "./lib/crypto";
 import {
   trendyolGetOrders,
+  trendyolGetProducts,
   type OrdersQuery,
   type TrendyolConfig,
 } from "./connectors/trendyol/client";
@@ -98,7 +100,9 @@ type JobData = {
     startDate?: number;
     endDate?: number;
     pageSize?: number;
-  } | null;
+      includeApproved?: boolean;
+    includeUnapproved?: boolean;
+} | null;
 
   // Sprint 8: webhook raw event (receiver -> worker)
   webhook?: {
@@ -499,8 +503,210 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
 
 
 
+
+type SyncProductsParams = {
+  pageSize?: number;
+  includeApproved?: boolean;
+  includeUnapproved?: boolean;
+};
+
+function extractProductItems(resp: any): any[] {
+  if (!resp) return [];
+  if (Array.isArray(resp.content)) return resp.content;
+  if (Array.isArray(resp.items)) return resp.items;
+  if (Array.isArray(resp.data?.content)) return resp.data.content;
+  if (Array.isArray(resp.data?.items)) return resp.data.items;
+  return [];
+}
+
+function extractTotalPages(resp: any): number | null {
+  const v =
+    resp?.totalPages ??
+    resp?.pageCount ??
+    resp?.data?.totalPages ??
+    resp?.data?.pageCount ??
+    null;
+  return Number.isFinite(Number(v)) ? Number(v) : null;
+}
+
+function extractVariants(p: any): any[] {
+  if (!p) return [];
+
+  // 1) Nested variant arrays (some APIs return this)
+  const candidates = [
+    p.variants,
+    p.items,
+    p.skus,
+    p.stockItems,
+    p.productVariants,
+    p.productVariantList,
+  ];
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+
+  // 2) Trendyol "products" list is often *flat*: each item already represents a barcode-level SKU.
+  // In that case, treat the product item itself as a variant so ProductVariant can be populated.
+  const selfBarcode = p?.barcode ?? p?.gtin ?? p?.ean ?? p?.primaryBarcode ?? null;
+  if (selfBarcode != null) return [p];
+
+  return [];
+}
+
+function pickPrimaryBarcode(p: any): string | null {
+  const direct = p?.primaryBarcode ?? p?.barcode ?? p?.mainBarcode ?? null;
+  if (direct) return String(direct);
+  const vars = extractVariants(p);
+  const v0 = vars.find((v: any) => v?.barcode != null);
+  return v0?.barcode != null ? String(v0.barcode) : null;
+}
+
+async function upsertProductRow(connectionId: string, marketplace: string, p: any): Promise<string> {
+  const productCodeRaw = p?.productCode ?? p?.productMainId ?? p?.code ?? null;
+  const productCode = productCodeRaw != null ? String(productCodeRaw).trim() : "";
+  if (!productCode) throw new Error("product item missing productCode/productMainId");
+
+  const id = randomUUID();
+  const title = p?.title != null ? String(p.title) : null;
+  const primaryBarcode = pickPrimaryBarcode(p);
+  const brandId = Number.isFinite(Number(p?.brandId)) ? Number(p.brandId) : null;
+  const categoryId = Number.isFinite(Number(p?.pimCategoryId ?? p?.categoryId)) ? Number(p.pimCategoryId ?? p.categoryId) : null;
+  const status = p?.status != null ? String(p.status) : "UNKNOWN";
+  const approved = !!(p?.approved ?? p?.isApproved ?? false);
+  const archived = !!(p?.archived ?? p?.isArchived ?? false);
+  const raw = JSON.stringify(p ?? {});
+
+  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    INSERT INTO "Product"
+      ("id","connectionId","marketplace","productCode","title","primaryBarcode","brandId","categoryId","status","approved","archived","raw","updatedAt")
+    VALUES
+      (${id}, ${connectionId}, ${marketplace}, ${productCode}, ${title}, ${primaryBarcode}, ${brandId}, ${categoryId}, ${status}, ${approved}, ${archived}, ${raw}::jsonb, NOW())
+    ON CONFLICT ("connectionId","marketplace","productCode")
+    DO UPDATE SET
+      "title"=EXCLUDED."title",
+      "primaryBarcode"=EXCLUDED."primaryBarcode",
+      "brandId"=EXCLUDED."brandId",
+      "categoryId"=EXCLUDED."categoryId",
+      "status"=EXCLUDED."status",
+      "approved"=EXCLUDED."approved",
+      "archived"=EXCLUDED."archived",
+      "raw"=EXCLUDED."raw",
+      "updatedAt"=NOW()
+    RETURNING "id";
+  `);
+
+  return rows?.[0]?.id ?? id;
+}
+
+async function upsertVariantRow(connectionId: string, marketplace: string, productId: string, v: any): Promise<void> {
+  const barcodeRaw = v?.barcode ?? v?.gtin ?? v?.ean ?? null;
+  const barcode = barcodeRaw != null ? String(barcodeRaw).trim() : "";
+  if (!barcode) return;
+
+  const id = randomUUID();
+
+  const stock = Number.isFinite(Number(v?.quantity ?? v?.stock ?? v?.stockCount)) ? Number(v.quantity ?? v.stock ?? v.stockCount) : null;
+  const listPrice = Number.isFinite(Number(v?.listPrice)) ? Number(v.listPrice) : null;
+  const salePrice = Number.isFinite(Number(v?.salePrice)) ? Number(v.salePrice) : null;
+  const currency = v?.currencyType ?? v?.currency ?? null;
+  const raw = JSON.stringify(v ?? {});
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "ProductVariant"
+      ("id","connectionId","productId","marketplace","barcode","stock","listPrice","salePrice","currency","raw","updatedAt")
+    VALUES
+      (${id}, ${connectionId}, ${productId}, ${marketplace}, ${barcode}, ${stock}, ${listPrice}, ${salePrice}, ${currency}, ${raw}::jsonb, NOW())
+    ON CONFLICT ("connectionId","marketplace","barcode")
+    DO UPDATE SET
+      "productId"=EXCLUDED."productId",
+      "stock"=EXCLUDED."stock",
+      "listPrice"=EXCLUDED."listPrice",
+      "salePrice"=EXCLUDED."salePrice",
+      "currency"=EXCLUDED."currency",
+      "raw"=EXCLUDED."raw",
+      "updatedAt"=NOW();
+  `);
+}
+
+async function syncProducts(connectionId: string, cfg: TrendyolConfig, params?: SyncProductsParams | null) {
+  const marketplace = "trendyol";
+
+  const pageSizeRaw = params?.pageSize ?? 50;
+  const pageSize = Math.max(1, Math.min(200, Number(pageSizeRaw)));
+
+  const includeApproved = params?.includeApproved !== false; // default true
+  const includeUnapproved = params?.includeUnapproved !== false; // default true
+
+  const countBeforeRows = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+    SELECT COUNT(*)::bigint as count FROM "Product" WHERE "connectionId"=${connectionId} AND "marketplace"=${marketplace};
+  `);
+  const countBefore = Number(countBeforeRows?.[0]?.count ?? 0);
+
+  let fetched = 0;
+  let productsProcessed = 0;
+  let variantsProcessed = 0;
+  let pages = 0;
+
+  async function runApprovedFlag(approved: boolean) {
+    let page = 0;
+    while (true) {
+      const resp = await trendyolGetProducts(cfg, { approved, page, size: pageSize });
+      const items = extractProductItems(resp);
+      const totalPages = extractTotalPages(resp);
+
+      pages += 1;
+
+      if (!items.length) break;
+
+      for (const p of items) {
+        fetched += 1;
+
+        // upsert product
+        const productId = await upsertProductRow(connectionId, marketplace, p);
+        productsProcessed += 1;
+
+        // upsert variants (best-effort)
+        const vars = extractVariants(p);
+        for (const v of vars) {
+          await upsertVariantRow(connectionId, marketplace, productId, v);
+          variantsProcessed += 1;
+        }
+      }
+
+      // stopping conditions
+      if (totalPages != null && page + 1 >= totalPages) break;
+      if (items.length < pageSize) break;
+
+      page += 1;
+      if (page > 200) break; // safety
+    }
+  }
+
+  if (includeApproved) await runApprovedFlag(true);
+  if (includeUnapproved) await runApprovedFlag(false);
+
+  const countAfterRows = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+    SELECT COUNT(*)::bigint as count FROM "Product" WHERE "connectionId"=${connectionId} AND "marketplace"=${marketplace};
+  `);
+  const countAfter = Number(countAfterRows?.[0]?.count ?? 0);
+
+  return {
+    fetched,
+    upserted: productsProcessed,
+    variantsUpserted: variantsProcessed,
+    countBefore,
+    countAfter,
+    pageSize,
+    includeApproved,
+    includeUnapproved,
+    pages,
+  };
+}
+
+
 const SYNC_JOB_NAMES = new Set([
   "TRENDYOL_SYNC_ORDERS",
+  "TRENDYOL_SYNC_PRODUCTS",
   "TRENDYOL_SYNC_SHIPMENT_PACKAGES", // backward-compat
   "TRENDYOL_SYNC_ORDERS_TARGETED",
 ]);
@@ -767,6 +973,14 @@ const worker = new Worker(
 
           break;
         }
+
+
+case "TRENDYOL_SYNC_PRODUCTS": {
+  const summary0 = await syncProducts(connectionId, cfg, (params as any) ?? undefined);
+  summary = { ...summary0, durationMs: Date.now() - t0 };
+  break;
+}
+
 
         case "TRENDYOL_WEBHOOK_EVENT": {
           const payload = (webhook as any)?.payload ?? null;

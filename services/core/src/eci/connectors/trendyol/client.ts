@@ -387,3 +387,32 @@ export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
     probeLegacy,
   };
 }
+
+// -----------------------------
+// Sprint 9 — Product write-path (PDF uyumlu)
+// -----------------------------
+
+export async function trendyolCreateProducts<T = any>(cfg: TrendyolConfig, payload: any): Promise<T> {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const sellerId = String(cfg.sellerId ?? "").trim();
+  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products`;
+
+  return trendyolFetch<T>(cfg, url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: payload,
+  });
+}
+
+export async function trendyolGetProductBatchRequest<T = any>(
+  cfg: TrendyolConfig,
+  batchRequestId: string | number
+): Promise<T> {
+  const base = resolveIntegrationBaseUrl(cfg);
+  const sellerId = String(cfg.sellerId ?? "").trim();
+  const bid = String(batchRequestId).trim();
+  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products/batch-requests/${encodeURIComponent(bid)}`;
+
+  return trendyolFetch<T>(cfg, url, { method: "GET" });
+}
+

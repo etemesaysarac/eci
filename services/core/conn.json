@@ -1,12 +1,11 @@
-﻿{
+{
   "type": "trendyol",
   "name": "Trendyol PROD",
   "config": {
     "sellerId": "142312",
     "env": "prod",
-    "apiKey": "YOUR_API_KEY",
-    "apiSecret": "YOUR_API_SECRET",
-    "agentName": "Easyso",
+    "apiKey": "tOv8KFjHZWCcQXHjEMkJ",
+    "apiSecret": "nakMlato6UY55jsYNTQ8",
     "integrationName": "ECI",
     "preferSapigw": true
   }

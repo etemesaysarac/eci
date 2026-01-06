@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { decryptJson } from "./lib/crypto";
 import type { TrendyolConfig } from "./connectors/trendyol/client";
+import { refCacheGetOrSet, refCacheRefreshByPrefix, refCacheStatus } from "./refcache";
 import {
   trendyolGetBrands,
   trendyolGetProductCategories,
@@ -10,6 +11,7 @@ import {
   trendyolGetProducts,
   type TrendyolProductFilterQuery,
 } from "./connectors/trendyol/client";
+import { refCacheGetOrSet, refCacheRefreshByPrefix, refCacheStatus } from "./refcache";
 
 // Sprint 9 — Product Catalog (Read Path)
 // Bu dosya sadece "okuma" hattını (brands/categories/products) açar.
@@ -106,6 +108,14 @@ async function loadTrendyolConfig(req: Request): Promise<TrendyolConfig> {
   return parsed.data;
 }
 
+function refTtlMs(resource: string) {
+  // Defaults tuned for "reference" data; can be overridden via env.
+  const def = Number(process.env.REFCACHE_TTL_MS ?? 24 * 60 * 60 * 1000);
+  const fast = Number(process.env.REFCACHE_FAST_TTL_MS ?? 6 * 60 * 60 * 1000);
+  if (resource.startsWith("brands")) return fast;
+  return def;
+}
+
 function parseIntParam(v: any, def: number, min?: number, max?: number) {
   const n = Number(v);
   if (!Number.isFinite(n)) return def;
@@ -130,7 +140,15 @@ export function registerSprint9ProductCatalogRoutes(app: Express) {
       const cfg = await loadTrendyolConfig(req);
       const page = parseIntParam(req.query.page, 0, 0, 2000);
       const size = parseIntParam(req.query.size, 50, 1, 200);
-      const data = await trendyolGetBrands(cfg, { page, size });
+      const { data, source } = await refCacheGetOrSet({
+        provider: "trendyol",
+        scope: "GLOBAL",
+        connectionId: null,
+        resourceKey: `brands:${cfg.env}:seller:${cfg.sellerId}:p:${page}:s:${size}`,
+        ttlMs: refTtlMs("brands"),
+        fetcher: () => trendyolGetBrands(cfg, { page, size }),
+      });
+      res.setHeader("x-cache", source);
       res.json(data);
     } catch (e: any) {
       const status = Number(e?.statusCode ?? 500);
@@ -142,7 +160,15 @@ export function registerSprint9ProductCatalogRoutes(app: Express) {
   app.get("/v1/trendyol/categories", async (req: Request, res: Response) => {
     try {
       const cfg = await loadTrendyolConfig(req);
-      const data = await trendyolGetProductCategories(cfg);
+      const { data, source } = await refCacheGetOrSet({
+        provider: "trendyol",
+        scope: "GLOBAL",
+        connectionId: null,
+        resourceKey: `categories:${cfg.env}:seller:${cfg.sellerId}`,
+        ttlMs: refTtlMs("categories"),
+        fetcher: () => trendyolGetProductCategories(cfg),
+      });
+      res.setHeader("x-cache", source);
       res.json(data);
     } catch (e: any) {
       const status = Number(e?.statusCode ?? 500);
@@ -156,7 +182,15 @@ export function registerSprint9ProductCatalogRoutes(app: Express) {
       const cfg = await loadTrendyolConfig(req);
       const categoryId = String(req.params.categoryId ?? "").trim();
       if (!categoryId) return res.status(400).json({ ok: false, error: "missing_category_id" });
-      const data = await trendyolGetCategoryAttributes(cfg, categoryId);
+      const { data, source } = await refCacheGetOrSet({
+        provider: "trendyol",
+        scope: "GLOBAL",
+        connectionId: null,
+        resourceKey: `catAttrs:${cfg.env}:seller:${cfg.sellerId}:cat:${categoryId}`,
+        ttlMs: refTtlMs(`catAttrs:${categoryId}`),
+        fetcher: () => trendyolGetCategoryAttributes(cfg, categoryId),
+      });
+      res.setHeader("x-cache", source);
       res.json(data);
     } catch (e: any) {
       const status = Number(e?.statusCode ?? 500);
@@ -164,7 +198,53 @@ export function registerSprint9ProductCatalogRoutes(app: Express) {
     }
   });
 
-  // Product filter/list (Trendyol proxy)
+  
+  // Category attribute values (derived from /attributes payload)
+  app.get("/v1/trendyol/categories/:categoryId/attributes/:attributeId/values", async (req: Request, res: Response) => {
+    try {
+      const cfg = await loadTrendyolConfig(req);
+      const categoryId = String(req.params.categoryId ?? "").trim();
+      const attributeId = String(req.params.attributeId ?? "").trim();
+      if (!categoryId) return res.status(400).json({ ok: false, error: "missing_category_id" });
+      if (!attributeId) return res.status(400).json({ ok: false, error: "missing_attribute_id" });
+
+      const { data, source } = await refCacheGetOrSet({
+        provider: "trendyol",
+        scope: "GLOBAL",
+        connectionId: null,
+        resourceKey: `catAttrs:${cfg.env}:seller:${cfg.sellerId}:cat:${categoryId}`,
+        ttlMs: refTtlMs(`catAttrs:${categoryId}`),
+        fetcher: () => trendyolGetCategoryAttributes(cfg, categoryId),
+      });
+
+      const attrs = (data as any)?.categoryAttributes ?? (data as any)?.attributes ?? [];
+      const attr = Array.isArray(attrs)
+        ? attrs.find((x: any) => String(x?.attribute?.id ?? "") === attributeId)
+        : undefined;
+
+      if (!attr) return res.status(404).json({ ok: false, error: "attribute_not_found" });
+
+      res.setHeader("x-cache", source);
+      res.json({
+        ok: true,
+        categoryId,
+        attributeId,
+        attributeName: attr?.attribute?.name,
+        values: attr?.attributeValues ?? [],
+        meta: {
+          required: !!attr?.required,
+          allowCustom: !!attr?.allowCustom,
+          variant: !!attr?.variant,
+          slicer: !!attr?.slicer,
+        },
+      });
+    } catch (e: any) {
+      const status = Number(e?.statusCode ?? 500);
+      res.status(status).json({ ok: false, error: e?.code ?? "internal_error", message: String(e?.message ?? e), details: e?.details });
+    }
+  });
+
+// Product filter/list (Trendyol proxy)
   app.get("/v1/trendyol/products", async (req: Request, res: Response) => {
     try {
       const cfg = await loadTrendyolConfig(req);
@@ -182,4 +262,29 @@ export function registerSprint9ProductCatalogRoutes(app: Express) {
       res.status(status).json({ ok: false, error: e?.code ?? "internal_error", message: String(e?.message ?? e), details: e?.details });
     }
   });
+
+  // -----------------------------
+  // Reference cache (debug/admin)
+  // -----------------------------
+  app.get("/v1/refcache/status", async (_req: Request, res: Response) => {
+    try {
+      const out = await refCacheStatus(50);
+      res.json({ ok: true, ...out });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: "internal_error", message: String(e?.message ?? e) });
+    }
+  });
+
+  app.post("/v1/refcache/refresh", async (req: Request, res: Response) => {
+    try {
+      const provider = String((req.body?.provider ?? "trendyol")).trim();
+      const prefix = String(req.body?.prefix ?? "").trim();
+      if (!prefix) return res.status(400).json({ ok: false, error: "missing_prefix" });
+      const out = await refCacheRefreshByPrefix(provider, prefix);
+      res.json({ ok: true, ...out });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: "internal_error", message: String(e?.message ?? e) });
+    }
+  });
+
 }

@@ -1,47 +1,26 @@
-PS C:\dev\eci\services\core> $CONN="cmjvat2w40000e6j473j38tno"
-PS C:\dev\eci\services\core>
-PS C:\dev\eci\services\core> curl.exe -i "http://127.0.0.1:3001/v1/trendyol/brands?connectionId=$CONN&page=0&size=20"
-HTTP/1.1 404 Not Found
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 103
-ETag: W/"67-NyS4c6iyYBGgIpDK/BgDCn5E3s0"
-Date: Sat, 03 Jan 2026 14:59:20 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-
-{"ok":false,"error":"connection_not_found","message":"Connection not found: cmjvat2w40000e6j473j38tno"}
+PS C:\dev\eci\services\core> $CONN="cmk28anrb0000e6gwaprps4hn"
 PS C:\dev\eci\services\core> curl.exe -i "http://127.0.0.1:3001/v1/trendyol/categories?connectionId=$CONN"
-HTTP/1.1 404 Not Found
+HTTP/1.1 500 Internal Server Error
 X-Powered-By: Express
 Content-Type: application/json; charset=utf-8
-Content-Length: 103
-ETag: W/"67-NyS4c6iyYBGgIpDK/BgDCn5E3s0"
-Date: Sat, 03 Jan 2026 14:59:20 GMT
+Content-Length: 291
+ETag: W/"123-5ZR6kApD456UND7Fk/dXzSDbje4"
+Date: Tue, 06 Jan 2026 14:33:57 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
-{"ok":false,"error":"connection_not_found","message":"Connection not found: cmjvat2w40000e6j473j38tno"}
-PS C:\dev\eci\services\core> curl.exe -i "http://127.0.0.1:3001/v1/trendyol/categories/411/attributes?connectionId=$CONN"
-HTTP/1.1 404 Not Found
+{"ok":false,"error":"P2010","message":"\nInvalid `prisma.$executeRawUnsafe()` invocation:\n\n\nRaw query failed. Code: `42804`. Message: `ERROR: column \"expiresAt\" is of type timestamp with time zone but expression is of type text\nHINT: You will need to rewrite or cast the expression.`"}
+PS C:\dev\eci\services\core> curl.exe -i "http://127.0.0.1:3001/v1/refcache/status"
+HTTP/1.1 200 OK
 X-Powered-By: Express
 Content-Type: application/json; charset=utf-8
-Content-Length: 103
-ETag: W/"67-NyS4c6iyYBGgIpDK/BgDCn5E3s0"
-Date: Sat, 03 Jan 2026 14:59:20 GMT
+Content-Length: 31
+ETag: W/"1f-lVuvHqAS6+3OdmPRbLvrgr2suN8"
+Date: Tue, 06 Jan 2026 14:33:57 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 
-{"ok":false,"error":"connection_not_found","message":"Connection not found: cmjvat2w40000e6j473j38tno"}
-PS C:\dev\eci\services\core> curl.exe -i "http://127.0.0.1:3001/v1/trendyol/products?connectionId=$CONN&approved=true&page=0&size=5"
-HTTP/1.1 404 Not Found
-X-Powered-By: Express
-Content-Type: application/json; charset=utf-8
-Content-Length: 103
-ETag: W/"67-NyS4c6iyYBGgIpDK/BgDCn5E3s0"
-Date: Sat, 03 Jan 2026 14:59:20 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-
-{"ok":false,"error":"connection_not_found","message":"Connection not found: cmjvat2w40000e6j473j38tno"}
+{"ok":true,"total":0,"rows":[]}
 PS C:\dev\eci\services\core>
+
+

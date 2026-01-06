@@ -103,6 +103,16 @@ const SyncOrdersSchema = z
   })
   .optional();
 
+
+
+// Sprint 9: Product sync request (manual trigger)
+const SyncProductsSchema = z
+  .object({
+    pageSize: z.number().int().min(1).max(200).optional(),
+    includeApproved: z.boolean().optional(),
+    includeUnapproved: z.boolean().optional(),
+  })
+  .optional();
 function mask(s?: string) {
   if (!s) return s;
   if (s.length <= 8) return "****";
@@ -328,6 +338,90 @@ app.post("/v1/connections/:id/sync/orders", asyncHandler(async (req: Request, re
     throw e;
   }
 }));
+
+
+
+// Sprint 9: manual products sync (fills Product/ProductVariant tables for panel catalog)
+app.post("/v1/connections/:id/sync/products", asyncHandler(async (req: Request, res: Response) => {
+  const id = req.params.id;
+
+  const conn = await prisma.connection.findUnique({
+    where: { id },
+    select: { id: true, type: true },
+  });
+
+  if (!conn) return res.status(404).json({ error: "not_found" });
+  if (conn.type !== "trendyol") return res.status(400).json({ error: "only trendyol supported for now" });
+
+  const payloadParsed = SyncProductsSchema?.safeParse(req.body);
+  if (payloadParsed && !payloadParsed.success) {
+    return res.status(400).json({ error: payloadParsed.error.flatten() });
+  }
+
+  const body = payloadParsed?.success ? payloadParsed.data ?? undefined : undefined;
+
+  // Concurrency guard: per-connection single active product sync
+  const lockKey = syncLockKey(id);
+  const pending = `pending:${randomUUID()}`;
+  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
+  if (acquired !== "OK") {
+    const active = await prisma.job.findFirst({
+      where: {
+        connectionId: id,
+        type: "TRENDYOL_SYNC_PRODUCTS",
+        status: { in: ["queued", "running", "retrying"] },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, status: true, createdAt: true },
+    });
+
+    return res.status(409).json({
+      error: "sync_in_progress",
+      connectionId: id,
+      jobId: active?.id,
+      status: active?.status,
+      createdAt: active?.createdAt,
+    });
+  }
+
+  let jobRow: { id: string } | null = null;
+  try {
+    jobRow = await prisma.job.create({
+      data: {
+        connectionId: id,
+        type: "TRENDYOL_SYNC_PRODUCTS",
+        status: "queued",
+      },
+      select: { id: true },
+    });
+
+    // lock owner => real jobId (so worker can release)
+    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
+
+    await eciQueue.add(
+      "TRENDYOL_SYNC_PRODUCTS",
+      { jobId: jobRow.id, connectionId: id, params: body ?? null },
+      {
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      }
+    );
+
+    return res.json({ jobId: jobRow.id });
+  } catch (e: any) {
+    await redis.del(lockKey);
+    if (jobRow?.id) {
+      await prisma.job.update({
+        where: { id: jobRow.id },
+        data: { status: "failed", finishedAt: new Date(), error: String(e?.message ?? e) },
+      });
+    }
+    throw e;
+  }
+}));
+
 
 // Backward-compat: eski route'Ä± kÄ±rmayalÄ±m. (Deprecated)
 app.post("/v1/connections/:id/sync/shipment-packages", asyncHandler(async (req: Request, res: Response) => {
