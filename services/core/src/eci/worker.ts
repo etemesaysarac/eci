@@ -28,11 +28,14 @@ import { prisma } from "./prisma";
 import { computeSyncWindow } from "./sync/window";
 import { decryptJson } from "./lib/crypto";
 import {
+  trendyolCreateProducts,
   trendyolGetOrders,
+  trendyolGetProductBatchRequest,
   trendyolGetProducts,
   type OrdersQuery,
   type TrendyolConfig,
 } from "./connectors/trendyol/client";
+
 
 process.on("unhandledRejection", (e: unknown) => console.error("[unhandledRejection]", e));
 process.on("uncaughtException", (e: unknown) => console.error("[uncaughtException]", e));
@@ -510,6 +513,16 @@ type SyncProductsParams = {
   includeUnapproved?: boolean;
 };
 
+type PushProductParams = {
+  productId: string;
+  batchLocalId?: string;
+  overridePayload?: any | null;
+};
+
+type RefreshProductBatchParams = {
+  batchLocalId: string;
+};
+
 function extractProductItems(resp: any): any[] {
   if (!resp) return [];
   if (Array.isArray(resp.content)) return resp.content;
@@ -840,7 +853,139 @@ async function enqueueTrendyolSyncOrdersTargeted(connectionId: string, target: T
   }
 }
 
-const worker = new Worker(
+const worker = 
+// -----------------------------
+// Sprint 9.3 — Product Catalog (Write Path)
+// -----------------------------
+
+function safeJson(v: any) {
+  try {
+    return v == null ? null : JSON.parse(JSON.stringify(v));
+  } catch {
+    return null;
+  }
+}
+
+function cleanUndefined<T extends Record<string, any>>(obj: T): T {
+  for (const k of Object.keys(obj)) {
+    if (obj[k] === undefined) delete (obj as any)[k];
+  }
+  return obj;
+}
+
+function normalizeVatRate(v: any): number {
+  const n = Number(v);
+  // Trendyol has changed allowed VAT sets over time; accept the union and default safely.
+  const allowed = new Set([0, 1, 8, 10, 18, 20]);
+  if (Number.isFinite(n) && allowed.has(n)) return n;
+  const def = Number(process.env.ECI_TRENDYOL_DEFAULT_VAT_RATE ?? 20);
+  return allowed.has(def) ? def : 20;
+}
+
+function pickDescription(dbProduct: any): string {
+  const raw = (dbProduct as any)?.raw ?? {};
+  const d = String((dbProduct as any)?.description ?? raw?.description ?? "").trim();
+  if (d) return d;
+  const title = String((dbProduct as any)?.title ?? "").trim();
+  return title ? `${title} (ECI)` : "ECI product";
+}
+async function ensureProductBatchRequestRow(connectionId: string, batchLocalId: string, type: string, initialSummary: any) {
+  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+    SELECT "id" FROM "ProductBatchRequest"
+    WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId}
+    LIMIT 1;
+  `);
+
+  if (rows?.length) return;
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "ProductBatchRequest"
+      ("id","connectionId","marketplace","type","remoteBatchId","status","payloadSummary","errors","createdAt","updatedAt")
+    VALUES
+      (
+        ${batchLocalId},
+        ${connectionId},
+        ${"trendyol"},
+        ${type},
+        ${null},
+        ${"CREATED"},
+        ${JSON.stringify(initialSummary ?? {})}::jsonb,
+        ${null}::jsonb,
+        NOW(),
+        NOW()
+      );
+  `);
+}
+
+async function updateProductBatchRequestRow(
+  connectionId: string,
+  batchLocalId: string,
+  patch: { remoteBatchId?: string | null; status?: string; payloadSummary?: any; errors?: any }
+) {
+  const sets: Prisma.Sql[] = [Prisma.sql`"updatedAt" = NOW()`];
+
+  if (patch.remoteBatchId !== undefined) sets.push(Prisma.sql`"remoteBatchId" = ${patch.remoteBatchId}`);
+  if (patch.status !== undefined) sets.push(Prisma.sql`"status" = ${patch.status}`);
+  if (patch.payloadSummary !== undefined)
+    sets.push(Prisma.sql`"payloadSummary" = ${JSON.stringify(patch.payloadSummary)}::jsonb`);
+  if (patch.errors !== undefined) sets.push(Prisma.sql`"errors" = ${JSON.stringify(patch.errors)}::jsonb`);
+
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "ProductBatchRequest"
+    SET ${Prisma.join(sets, Prisma.sql`, `)}
+    WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId};
+  `);
+}
+
+async function loadDbProduct(connectionId: string, productId: string) {
+  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
+    SELECT "id","productCode","title","brandId","categoryId","raw"
+    FROM "Product"
+    WHERE "connectionId"=${connectionId} AND "id"=${productId}
+    LIMIT 1;
+  `);
+  return rows?.[0] ?? null;
+}
+
+async function loadDbVariants(connectionId: string, productId: string) {
+  return prisma.$queryRaw<any[]>(Prisma.sql`
+    SELECT "id","barcode","stock","listPrice","salePrice","currency","raw"
+    FROM "ProductVariant"
+    WHERE "connectionId"=${connectionId} AND "productId"=${productId}
+    ORDER BY "id" ASC
+    LIMIT 5000;
+  `);
+}
+
+function extractBatchId(resp: any): string | null {
+  const raw =
+    resp?.batchRequestId ??
+    resp?.id ??
+    resp?.data?.batchRequestId ??
+    resp?.data?.id ??
+    resp?.result?.batchRequestId ??
+    resp?.result?.id ??
+    null;
+
+  const s = raw != null ? String(raw).trim() : "";
+  return s ? s : null;
+}
+
+function extractBatchStatus(resp: any): string {
+  const raw =
+    resp?.status ??
+    resp?.batchStatus ??
+    resp?.data?.status ??
+    resp?.data?.batchStatus ??
+    resp?.result?.status ??
+    resp?.result?.batchStatus ??
+    "UNKNOWN";
+
+  return String(raw).toUpperCase();
+}
+
+
+new Worker(
   "eci-jobs",
   async (job: Job<JobData, any, string>) => {
     const { connectionId, jobId, params, webhook, target } = job.data as JobData;
@@ -982,7 +1127,123 @@ case "TRENDYOL_SYNC_PRODUCTS": {
 }
 
 
-        case "TRENDYOL_WEBHOOK_EVENT": {
+        
+        case "TRENDYOL_PUSH_PRODUCT": {
+          const p = (params as any) as PushProductParams;
+          const productId = String(p?.productId ?? "").trim();
+          const batchLocalId = String(p?.batchLocalId ?? "").trim() || randomUUID();
+          const overridePayload = (p as any)?.overridePayload ?? null;
+
+          if (!productId) throw new Error("missing_productId");
+
+          await ensureProductBatchRequestRow(connectionId, batchLocalId, "PUSH_PRODUCT", { productId, note: "worker-start" });
+          await updateProductBatchRequestRow(connectionId, batchLocalId, { status: "SUBMITTING" });
+
+          const dbProduct = await loadDbProduct(connectionId, productId);
+          if (!dbProduct) {
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              status: "FAILED",
+              errors: { error: "product_not_found", productId },
+            });
+            summary = { ok: false, error: "product_not_found", productId, batchLocalId };
+            break;
+          }
+
+          const vars = await loadDbVariants(connectionId, productId);
+          const items = (vars ?? []).map((v: any, idx: number) =>
+            cleanUndefined({
+              // NOTE: Trendyol expects certain mandatory fields; this is a minimal best-effort mapping.
+              barcode: String(v?.barcode ?? (dbProduct?.productCode ? `${dbProduct.productCode}-${idx + 1}` : "")).trim(),
+              title: dbProduct?.title ?? null,
+              productMainId: dbProduct?.productCode ?? null,
+              brandId: dbProduct?.brandId ?? null,
+              categoryId: dbProduct?.categoryId ?? null,
+              quantity: Number(v?.stock ?? 0),
+              listPrice: Number(v?.listPrice ?? 0),
+              salePrice: Number(v?.salePrice ?? v?.listPrice ?? 0),
+              currencyType: v?.currency ?? "TRY",
+            })
+          );
+
+          const payload = overridePayload ?? { items };
+          await updateProductBatchRequestRow(connectionId, batchLocalId, {
+            status: "SUBMITTING",
+            payloadSummary: { productId, items: items.length, hasOverridePayload: !!overridePayload },
+          });
+
+          try {
+            const resp = await trendyolCreateProducts(cfg, payload);
+            const remoteBatchId = extractBatchId(resp);
+            const st = remoteBatchId ? "SUBMITTED" : "SUBMITTED_NO_BATCH_ID";
+
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              remoteBatchId,
+              status: st,
+              payloadSummary: { productId, remoteBatchId, status: st, response: safeJson(resp) },
+              errors: null,
+            });
+
+            summary = { ok: true, productId, batchLocalId, remoteBatchId, status: st };
+          } catch (e: any) {
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              status: "FAILED",
+              errors: { message: String(e?.message ?? e) },
+            });
+            summary = { ok: false, productId, batchLocalId, error: String(e?.message ?? e) };
+          }
+
+          break;
+        }
+
+        case "TRENDYOL_REFRESH_PRODUCT_BATCH": {
+          const p = (params as any) as RefreshProductBatchParams;
+          const batchLocalId = String(p?.batchLocalId ?? "").trim();
+          if (!batchLocalId) throw new Error("missing_batchLocalId");
+
+          const row = await prisma.$queryRaw<any[]>(Prisma.sql`
+            SELECT "remoteBatchId" FROM "ProductBatchRequest"
+            WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId}
+            LIMIT 1;
+          `);
+
+          if (!row?.length) {
+            summary = { ok: false, batchLocalId, error: "batch_not_found" };
+            break;
+          }
+
+          const remoteBatchId = row?.[0]?.remoteBatchId ? String(row[0].remoteBatchId).trim() : "";
+          if (!remoteBatchId) {
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              status: "FAILED",
+              errors: { error: "missing_remoteBatchId" },
+            });
+            summary = { ok: false, batchLocalId, error: "missing_remoteBatchId" };
+            break;
+          }
+
+          try {
+            const resp = await trendyolGetProductBatchRequest(cfg, remoteBatchId);
+            const status = extractBatchStatus(resp);
+
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              status,
+              payloadSummary: { remoteBatchId, status, response: safeJson(resp) },
+              errors: null,
+            });
+
+            summary = { ok: true, batchLocalId, remoteBatchId, status };
+          } catch (e: any) {
+            await updateProductBatchRequestRow(connectionId, batchLocalId, {
+              status: "FAILED",
+              errors: { message: String(e?.message ?? e) },
+            });
+            summary = { ok: false, batchLocalId, remoteBatchId, error: String(e?.message ?? e) };
+          }
+
+          break;
+        }
+
+case "TRENDYOL_WEBHOOK_EVENT": {
           const payload = (webhook as any)?.payload ?? null;
           const derived = parseWebhookTarget(payload);
 

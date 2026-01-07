@@ -54,6 +54,9 @@ Worker job: SYNC_PRODUCTS, PUSH_PRODUCT, BULK_CONTENT_UPDATE
 
 API: read-only + command endpoint’ler
 
+
+
+
 Sprint 10 — Inventory (price & stock)
 
 Amaç: müşterinin “stok/fiyat eşitleme” beklentisini karşılamak.

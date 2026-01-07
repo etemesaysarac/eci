@@ -125,7 +125,7 @@ export async function refCacheSet<T = any>(
   await prisma.$executeRawUnsafe(
     `
 INSERT INTO "ReferenceCache" ("id","provider","scope","connectionId","resourceKey","payload","expiresAt")
-VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::timestamptz)
 ON CONFLICT ("id") DO UPDATE SET
   "payload" = EXCLUDED."payload",
   "expiresAt" = EXCLUDED."expiresAt",

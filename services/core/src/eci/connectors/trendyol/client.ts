@@ -98,13 +98,45 @@ function buildHeaders(cfg: TrendyolConfig) {
   };
 }
 
-function snippet(data: unknown, max = 800): string {
+function snippet(data: unknown, max = 1800): string {
   try {
-    // Probe / log hijyeni: PII içerebilecek alanları dökmeyelim.
-    // Trendyol orders response genelde { totalElements, totalPages, page, size, content:[...] } şeklinde.
+    // Log hijyeni: mümkün olduğunca PII dökmeyelim.
+    // 1) Eğer Trendyol "errors" dizisi dönüyorsa, alan/hata mesajlarını göster (truncate).
+    // 2) Aksi halde sadece anahtar listesi + bazı sayısal metrikleri göster.
     if (data && typeof data === "object") {
       const d: any = data as any;
 
+      // Trendyol 4xx hatalarında sık görülen şema: { timestamp, exception, errors: [...] }
+      if (Array.isArray(d.errors)) {
+        const errors = d.errors.slice(0, 25).map((e: any) => {
+          const msg = String(e?.message ?? e?.errorMessage ?? e?.reason ?? e?.detail ?? "").slice(0, 240);
+          const field = e?.key ?? e?.field ?? e?.name ?? e?.attributeId ?? e?.path ?? undefined;
+
+          // Bazı hatalarda "value/barcode/stockCode" gibi alanlar gelebilir; aşırı uzun metinleri kırp.
+          const rawVal = e?.value ?? e?.barcode ?? e?.stockCode ?? e?.data ?? undefined;
+          const val =
+            rawVal == null
+              ? undefined
+              : String(rawVal).length > 60
+                ? String(rawVal).slice(0, 60) + "…"
+                : String(rawVal);
+
+          const out: any = { field, message: msg || undefined };
+          if (val) out.value = val;
+          return out;
+        });
+
+        const out: any = {
+          exception: d.exception ?? d.errorType ?? d.type ?? undefined,
+          message: d.message ?? d.error ?? undefined,
+          errors,
+        };
+
+        const s = JSON.stringify(out);
+        return s.length > max ? s.slice(0, max) + "…" : s;
+      }
+
+      // Orders gibi büyük response'larda sadece özet göster (PII riskini azaltır)
       const out: any = {};
       for (const k of ["totalElements", "totalPages", "page", "size", "numberOfElements"]) {
         if (typeof d[k] === "number") out[k] = d[k];
@@ -125,8 +157,8 @@ function snippet(data: unknown, max = 800): string {
         return s.length > max ? s.slice(0, max) + "…" : s;
       }
 
-      // generic: sadece anahtar listesini göster (PII riski düşük)
-      const keys = Object.keys(d).slice(0, 20);
+      // generic: sadece anahtar listesi göster
+      const keys = Object.keys(d).slice(0, 40);
       const s = JSON.stringify({ keys });
       return s.length > max ? s.slice(0, max) + "…" : s;
     }
@@ -137,6 +169,7 @@ function snippet(data: unknown, max = 800): string {
     return "[unserializable]";
   }
 }
+
 
 async function httpGetJson<T>(
   url: string,
@@ -198,7 +231,8 @@ export async function trendyolFetch<T = any>(
   if (res.status >= 200 && res.status < 300) return res.data as T;
 
   // Provide payload snippet for debugging (truncated to keep logs readable)
-  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status}) :: ${snippet(res.data)}`);
+  const ct = String((res.headers as any)?.["content-type"] ?? "").trim();
+  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status})${ct ? ` ct=${ct}` : ""} :: ${snippet(res.data)}`);
 }
 
 

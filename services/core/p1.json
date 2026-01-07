@@ -1,0 +1,1 @@
+﻿{"ok":false,"error":"internal_error","message":"\nInvalid `prisma.$queryRaw()` invocation:\n\n\nRaw query failed. Code: `42601`. Message: `ERROR: syntax error at or near \"Object\"`"}
