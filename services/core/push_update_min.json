@@ -1,0 +1,12 @@
+﻿{
+    "items":  [
+                  {
+                      "quantity":  0,
+                      "vatRate":  20,
+                      "barcode":  "8608802530385",
+                      "listPrice":  331.96,
+                      "salePrice":  191.93,
+                      "currencyType":  "TRY"
+                  }
+              ]
+}

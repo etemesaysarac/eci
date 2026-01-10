@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { registerSprint7ActionRoutes } from "./server.sprint7";
 import { registerSprint8WebhookRoutes } from "./server.sprint8";
-import { registerSprint9ProductCatalogRoutes } from "./server.sprint9";
+import { registerSprint9ProductRoutes } from "./server.sprint9";
+import { registerSprint10InventoryRoutes } from "./server.sprint10";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -34,7 +35,8 @@ app.use(
 );
 registerSprint7ActionRoutes(app);
 registerSprint8WebhookRoutes(app);
-registerSprint9ProductCatalogRoutes(app);
+registerSprint9ProductRoutes(app);
+registerSprint10InventoryRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.
@@ -70,8 +72,8 @@ const TrendyolConfigSchema: z.ZodType<TrendyolConfig> = z
     apiKey: z.string().optional(),
     apiSecret: z.string().optional(),
 
-    agentName: z.string().default("SoXYZ"),
-    integrationName: z.string().default("SoXYZ-ECI"),
+    agentName: z.string().default("Easyso"),
+    integrationName: z.string().default("ECI"),
 
     preferSapigw: z.boolean().optional(),
     timeoutMs: z.number().int().positive().optional(),
@@ -103,20 +105,10 @@ const SyncOrdersSchema = z
   })
   .optional();
 
-
-
-// Sprint 9: Product sync request (manual trigger)
-const SyncProductsSchema = z
-  .object({
-    pageSize: z.number().int().min(1).max(200).optional(),
-    includeApproved: z.boolean().optional(),
-    includeUnapproved: z.boolean().optional(),
-  })
-  .optional();
 function mask(s?: string) {
   if (!s) return s;
   if (s.length <= 8) return "****";
-  return s.slice(0, 4) + "â€¦" + s.slice(-4);
+  return s.slice(0, 4) + "..." + s.slice(-4);
 }
 
 function sanitizeConfig(cfg: TrendyolConfig) {
@@ -338,90 +330,6 @@ app.post("/v1/connections/:id/sync/orders", asyncHandler(async (req: Request, re
     throw e;
   }
 }));
-
-
-
-// Sprint 9: manual products sync (fills Product/ProductVariant tables for panel catalog)
-app.post("/v1/connections/:id/sync/products", asyncHandler(async (req: Request, res: Response) => {
-  const id = req.params.id;
-
-  const conn = await prisma.connection.findUnique({
-    where: { id },
-    select: { id: true, type: true },
-  });
-
-  if (!conn) return res.status(404).json({ error: "not_found" });
-  if (conn.type !== "trendyol") return res.status(400).json({ error: "only trendyol supported for now" });
-
-  const payloadParsed = SyncProductsSchema?.safeParse(req.body);
-  if (payloadParsed && !payloadParsed.success) {
-    return res.status(400).json({ error: payloadParsed.error.flatten() });
-  }
-
-  const body = payloadParsed?.success ? payloadParsed.data ?? undefined : undefined;
-
-  // Concurrency guard: per-connection single active product sync
-  const lockKey = syncLockKey(id);
-  const pending = `pending:${randomUUID()}`;
-  const acquired = await redis.set(lockKey, pending, "PX", SYNC_LOCK_TTL_MS, "NX");
-  if (acquired !== "OK") {
-    const active = await prisma.job.findFirst({
-      where: {
-        connectionId: id,
-        type: "TRENDYOL_SYNC_PRODUCTS",
-        status: { in: ["queued", "running", "retrying"] },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, status: true, createdAt: true },
-    });
-
-    return res.status(409).json({
-      error: "sync_in_progress",
-      connectionId: id,
-      jobId: active?.id,
-      status: active?.status,
-      createdAt: active?.createdAt,
-    });
-  }
-
-  let jobRow: { id: string } | null = null;
-  try {
-    jobRow = await prisma.job.create({
-      data: {
-        connectionId: id,
-        type: "TRENDYOL_SYNC_PRODUCTS",
-        status: "queued",
-      },
-      select: { id: true },
-    });
-
-    // lock owner => real jobId (so worker can release)
-    await redis.set(lockKey, jobRow.id, "PX", SYNC_LOCK_TTL_MS);
-
-    await eciQueue.add(
-      "TRENDYOL_SYNC_PRODUCTS",
-      { jobId: jobRow.id, connectionId: id, params: body ?? null },
-      {
-        attempts: 5,
-        backoff: { type: "exponential", delay: 1000 },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
-      }
-    );
-
-    return res.json({ jobId: jobRow.id });
-  } catch (e: any) {
-    await redis.del(lockKey);
-    if (jobRow?.id) {
-      await prisma.job.update({
-        where: { id: jobRow.id },
-        data: { status: "failed", finishedAt: new Date(), error: String(e?.message ?? e) },
-      });
-    }
-    throw e;
-  }
-}));
-
 
 // Backward-compat: eski route'Ä± kÄ±rmayalÄ±m. (Deprecated)
 app.post("/v1/connections/:id/sync/shipment-packages", asyncHandler(async (req: Request, res: Response) => {

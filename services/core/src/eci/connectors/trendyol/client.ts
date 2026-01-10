@@ -84,6 +84,41 @@ function resolveIntegrationBaseUrl(cfg: TrendyolConfig): string {
   return stripTrailingSlashes(envToIntegrationBaseUrl(env));
 }
 
+// Ürün servisleri (product) için dokümantasyondaki “resmi” host apigw.trendyol.com'dur.
+// Bazı kurulumlarda cfg.preferSapigw=true ile api.trendyol.com (sapigw) seçilebiliyor.
+// Orders tarafında bu bazen işe yarasa da, product create/update gibi uçlarda 400 (bad.request)
+// gibi “genel” hatalar görmeye yol açabiliyor. Bu nedenle product endpoint'lerinde apigw'yi
+// zorlayarak daha deterministik davranıyoruz.
+function resolveProductBaseUrl(cfg: TrendyolConfig): string {
+  const env = cfg.env ?? "prod";
+
+  // explicit override (proxy/mocks) still allowed
+  const override = cfg.baseUrl?.trim();
+  if (override) {
+    // If override points to Trendyol's legacy host (api.trendyol.com/stageapi.trendyol.com),
+    // ignore it for PRODUCT endpoints and force apigw. Non-Trendyol overrides (local proxies) stay.
+    try {
+      const u = new URL(override);
+      const host = u.hostname.toLowerCase();
+      const isTrendyolHost = host.endsWith("trendyol.com");
+      const isLegacySapigw = host === "api.trendyol.com" || host === "stageapi.trendyol.com";
+      if (isTrendyolHost && isLegacySapigw) {
+        return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+      }
+      return stripTrailingSlashes(override);
+    } catch {
+      return stripTrailingSlashes(override);
+    }
+  }
+
+  // Prefer apigw env var
+  const apigw = process.env.TRENDYOL_BASE_URL?.trim();
+  if (apigw) return stripTrailingSlashes(apigw);
+
+  // Fallback to apigw mapping (NOT sapigw)
+  return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+}
+
 function buildHeaders(cfg: TrendyolConfig) {
   const sellerId = String(cfg.sellerId ?? "").trim();
   const agentName = String(cfg.agentName ?? "Easyso").trim();
@@ -98,45 +133,41 @@ function buildHeaders(cfg: TrendyolConfig) {
   };
 }
 
-function snippet(data: unknown, max = 1800): string {
+function snippet(data: unknown, max = 800): string {
   try {
-    // Log hijyeni: mümkün olduğunca PII dökmeyelim.
-    // 1) Eğer Trendyol "errors" dizisi dönüyorsa, alan/hata mesajlarını göster (truncate).
-    // 2) Aksi halde sadece anahtar listesi + bazı sayısal metrikleri göster.
+    // Probe / log hijyeni: PII içerebilecek alanları dökmeyelim.
+    // Trendyol orders response genelde { totalElements, totalPages, page, size, content:[...] } şeklinde.
     if (data && typeof data === "object") {
       const d: any = data as any;
 
-      // Trendyol 4xx hatalarında sık görülen şema: { timestamp, exception, errors: [...] }
-      if (Array.isArray(d.errors)) {
-        const errors = d.errors.slice(0, 25).map((e: any) => {
-          const msg = String(e?.message ?? e?.errorMessage ?? e?.reason ?? e?.detail ?? "").slice(0, 240);
-          const field = e?.key ?? e?.field ?? e?.name ?? e?.attributeId ?? e?.path ?? undefined;
-
-          // Bazı hatalarda "value/barcode/stockCode" gibi alanlar gelebilir; aşırı uzun metinleri kırp.
-          const rawVal = e?.value ?? e?.barcode ?? e?.stockCode ?? e?.data ?? undefined;
-          const val =
-            rawVal == null
-              ? undefined
-              : String(rawVal).length > 60
-                ? String(rawVal).slice(0, 60) + "…"
-                : String(rawVal);
-
-          const out: any = { field, message: msg || undefined };
-          if (val) out.value = val;
-          return out;
-        });
-
-        const out: any = {
-          exception: d.exception ?? d.errorType ?? d.type ?? undefined,
-          message: d.message ?? d.error ?? undefined,
-          errors,
+      // Trendyol business/validation errors often come as { timestamp, exception, errors:[...] }.
+      // Our previous behavior logged only keys, which is useless for fixing 400s.
+      // Here we safely surface a small, non-PII sample of errors to speed up debugging.
+      if (Array.isArray(d.errors) && d.errors.length > 0) {
+        const keys = Object.keys(d).slice(0, 20);
+        const pickError = (e: any) => {
+          if (!e || typeof e !== "object") return e;
+          const out: any = {};
+          for (const k of [
+            "errorCode",
+            "code",
+            "key",
+            "field",
+            "message",
+            "description",
+            "reason",
+            "detail",
+          ]) {
+            if (e[k] != null) out[k] = e[k];
+          }
+          return Object.keys(out).length > 0 ? out : e;
         };
 
-        const s = JSON.stringify(out);
+        const errorsSample = d.errors.slice(0, 3).map(pickError);
+        const s = JSON.stringify({ keys, errorsCount: d.errors.length, errorsSample });
         return s.length > max ? s.slice(0, max) + "…" : s;
       }
 
-      // Orders gibi büyük response'larda sadece özet göster (PII riskini azaltır)
       const out: any = {};
       for (const k of ["totalElements", "totalPages", "page", "size", "numberOfElements"]) {
         if (typeof d[k] === "number") out[k] = d[k];
@@ -157,8 +188,8 @@ function snippet(data: unknown, max = 1800): string {
         return s.length > max ? s.slice(0, max) + "…" : s;
       }
 
-      // generic: sadece anahtar listesi göster
-      const keys = Object.keys(d).slice(0, 40);
+      // generic: sadece anahtar listesini göster (PII riski düşük)
+      const keys = Object.keys(d).slice(0, 20);
       const s = JSON.stringify({ keys });
       return s.length > max ? s.slice(0, max) + "…" : s;
     }
@@ -169,7 +200,6 @@ function snippet(data: unknown, max = 1800): string {
     return "[unserializable]";
   }
 }
-
 
 async function httpGetJson<T>(
   url: string,
@@ -231,8 +261,7 @@ export async function trendyolFetch<T = any>(
   if (res.status >= 200 && res.status < 300) return res.data as T;
 
   // Provide payload snippet for debugging (truncated to keep logs readable)
-  const ct = String((res.headers as any)?.["content-type"] ?? "").trim();
-  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status})${ct ? ` ct=${ct}` : ""} :: ${snippet(res.data)}`);
+  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status}) :: ${snippet(res.data)}`);
 }
 
 
@@ -279,7 +308,7 @@ export async function trendyolGetOrders(cfg: TrendyolConfig, q: OrdersQuery) {
 
   if (res.status >= 200 && res.status < 300) return res.data;
 
-  throw new Error(`Trendyol request failed (${res.status}) ${url} :: ${snippet(res.data)}`);
+  throw new Error(`Trendyol orders failed (${res.status}) ${url} :: ${snippet(res.data)}`);
 }
 
 // Backward-compat: eski isim halen import eden yerler için.
@@ -290,59 +319,6 @@ export const trendyolGetShipmentPackages = trendyolGetOrders;
  * Varsayılan: sadece /orders dener.
  * Debug istersen: cfg.probeLegacy=true yapınca /shipment-packages kök endpoint’ini de ayrıca dener.
  */
-
-
-// -----------------------------
-// Sprint 9 — Product Catalog (Read Path)
-// -----------------------------
-
-export type TrendyolBrandsQuery = {
-  page?: number;
-  size?: number;
-};
-
-export async function trendyolGetBrands(cfg: TrendyolConfig, q: TrendyolBrandsQuery = {}) {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const url = `${base}/integration/product/brands`;
-  return trendyolFetch(cfg, url, { params: { page: q.page ?? 0, size: q.size ?? 50 } });
-}
-
-export async function trendyolGetProductCategories(cfg: TrendyolConfig) {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const url = `${base}/integration/product/product-categories`;
-  return trendyolFetch(cfg, url);
-}
-
-export async function trendyolGetCategoryAttributes(cfg: TrendyolConfig, categoryId: string) {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const url = `${base}/integration/product/product-categories/${encodeURIComponent(String(categoryId))}/attributes`;
-  return trendyolFetch(cfg, url);
-}
-
-export type TrendyolProductFilterQuery = {
-  approved?: boolean;
-  page?: number;
-  size?: number;
-  barcode?: string;
-  productCode?: string;
-};
-
-export async function trendyolGetProducts(cfg: TrendyolConfig, q: TrendyolProductFilterQuery = {}) {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const sellerId = String(cfg.sellerId ?? "").trim();
-  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products`;
-
-  const params: Record<string, any> = {
-    page: q.page ?? 0,
-    size: q.size ?? 50,
-  };
-
-  if (typeof q.approved === "boolean") params.approved = q.approved;
-  if (q.barcode) params.barcode = q.barcode;
-  if (q.productCode) params.productCode = q.productCode;
-
-  return trendyolFetch(cfg, url, { params });
-}
 export async function trendyolProbeShipmentPackages(cfg: TrendyolConfig) {
 
   // Connection test / smoke test için: çalışan kapıdan (orders) probe yapıyoruz.
@@ -395,11 +371,105 @@ export function shouldRetry(err: unknown): boolean {
   return false;
 }
 
-export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
+// -----------------------------
+// Sprint 9 — Product endpoints
+// -----------------------------
+
+export type BrandsQuery = { page?: number; size?: number };
+export async function trendyolGetBrands(cfg: TrendyolConfig, q?: BrandsQuery) {
+  const page = q?.page ?? 0;
+  const size = q?.size ?? 1000;
+
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/brands`;
+  return trendyolFetch(cfg, url, { params: { page, size } });
+}
+
+export async function trendyolGetCategoryTree(cfg: TrendyolConfig) {
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/product-categories`;
+  return trendyolFetch(cfg, url);
+}
+
+export async function trendyolGetCategoryAttributes(cfg: TrendyolConfig, categoryId: string) {
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/product-categories/${categoryId}/attributes`;
+  return trendyolFetch(cfg, url);
+}
+
+export async function trendyolGetCategoryAttributeValues(cfg: TrendyolConfig, categoryId: string, attributeId: string) {
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/product-categories/${categoryId}/attributes/${attributeId}/values`;
+  return trendyolFetch(cfg, url);
+}
+
+export type ProductsListQuery = { page?: number; size?: number };
+
+export async function trendyolListApprovedProducts(cfg: TrendyolConfig, q?: ProductsListQuery) {
+  const page = q?.page ?? 0;
+  const size = q?.size ?? 50;
+
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/sellers/${cfg.sellerId}/products`;
+  return trendyolFetch(cfg, url, { params: { page, size } });
+}
+
+export async function trendyolListUnapprovedProducts(cfg: TrendyolConfig, q?: ProductsListQuery) {
+  const page = q?.page ?? 0;
+  const size = q?.size ?? 50;
+
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/sellers/${cfg.sellerId}/products/unapproved`;
+  return trendyolFetch(cfg, url, { params: { page, size } });
+}
+
+export async function trendyolGetProductBatchRequestResult(cfg: TrendyolConfig, batchRequestId: string) {
+  const base = resolveProductBaseUrl(cfg);
+  const url = `${base}/integration/product/sellers/${cfg.sellerId}/products/batch-requests/${batchRequestId}`;
+  return trendyolFetch(cfg, url);
+}
+
+/**
+ * Sprint 9 — Products: create / update (batch)
+ *
+ * Trendyol, ürün oluşturma ve güncelleme için aynı endpoint'i kullanır:
+ *  - POST: create
+ *  - PUT : update
+ *
+ * Her ikisi de response içinde batchRequestId döndürür; sonucu ayrıca batch-requests result endpoint'inden takip edilir.
+ */
+export async function trendyolCreateProducts(cfg: TrendyolConfig, payload: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveProductBaseUrl(c);
+  const url = `${base}/integration/product/sellers/${c.sellerId}/products`;
+  return trendyolFetch(c, url, { method: "POST", body: payload });
+}
+
+export async function trendyolUpdateProducts(cfg: TrendyolConfig, payload: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveProductBaseUrl(c);
+  const url = `${base}/integration/product/sellers/${c.sellerId}/products`;
+  return trendyolFetch(c, url, { method: "PUT", body: payload });
+}
+
+
+export async function trendyolUpdatePriceAndInventory(cfg: TrendyolConfig, payload: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveIntegrationBaseUrl(c);
+  const url = `${base}/integration/inventory/sellers/${c.sellerId}/products/price-and-inventory`;
+  return trendyolFetch(c, url, { method: "POST", body: payload });
+}
+
+
+function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
   const sellerId = String(cfg.sellerId ?? "").trim();
   const tokenRaw = cfg.token != null ? String(cfg.token).trim() : undefined;
   const apiKey = cfg.apiKey != null ? String(cfg.apiKey).trim() : undefined;
   const apiSecret = cfg.apiSecret != null ? String(cfg.apiSecret).trim() : undefined;
+
+  const baseUrl = cfg.baseUrl != null ? String(cfg.baseUrl).trim() : undefined;
+  const timeoutMs =
+    typeof cfg.timeoutMs === "number" && Number.isFinite(cfg.timeoutMs) ? cfg.timeoutMs : undefined;
 
   const env = (cfg.env ?? "prod") as TrendyolEnv;
 
@@ -412,6 +482,8 @@ export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
   return {
     sellerId,
     env,
+    baseUrl: baseUrl || undefined,
+    timeoutMs,
     token: tokenRaw,
     apiKey,
     apiSecret,
@@ -421,32 +493,3 @@ export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
     probeLegacy,
   };
 }
-
-// -----------------------------
-// Sprint 9 — Product write-path (PDF uyumlu)
-// -----------------------------
-
-export async function trendyolCreateProducts<T = any>(cfg: TrendyolConfig, payload: any): Promise<T> {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const sellerId = String(cfg.sellerId ?? "").trim();
-  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products`;
-
-  return trendyolFetch<T>(cfg, url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: payload,
-  });
-}
-
-export async function trendyolGetProductBatchRequest<T = any>(
-  cfg: TrendyolConfig,
-  batchRequestId: string | number
-): Promise<T> {
-  const base = resolveIntegrationBaseUrl(cfg);
-  const sellerId = String(cfg.sellerId ?? "").trim();
-  const bid = String(batchRequestId).trim();
-  const url = `${base}/integration/product/sellers/${encodeURIComponent(sellerId)}/products/batch-requests/${encodeURIComponent(bid)}`;
-
-  return trendyolFetch<T>(cfg, url, { method: "GET" });
-}
-

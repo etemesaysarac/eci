@@ -1,0 +1,44 @@
+﻿{
+    "items":  [
+                  {
+                      "barcode":  "8608802530385",
+                      "title":  "4 Adet Holtmenli Bant Dikkat K─▒r─▒l─▒r Ambalaj Koli Paket Bant─▒ 45 Mm X 100 M",
+                      "productMainId":  "8608802530385",
+                      "brandId":  1192893,
+                      "categoryId":  1505,
+                      "quantity":  0,
+                      "stockCode":  "8608802530385",
+                      "dimensionalWeight":  1,
+                      "description":  "",
+                      "currencyType":  "TRY",
+                      "listPrice":  331.96,
+                      "salePrice":  191.93,
+                      "vatRate":  20,
+                      "cargoCompanyId":  10,
+                      "images":  [
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty401/product/media/images/20220416/10/92889877/450671191/1/1_org_zoom.jpg"
+                                     },
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty401/product/media/images/20220416/10/92889877/450671191/2/2_org_zoom.jpg"
+                                     },
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty400/product/media/images/20220416/10/92889877/450671191/3/3_org_zoom.jpg"
+                                     },
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty401/product/media/images/20220416/10/92889877/450671191/4/4_org_zoom.jpg"
+                                     },
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty400/product/media/images/20220416/10/92889877/450671191/5/5_org_zoom.jpg"
+                                     },
+                                     {
+                                         "url":  "https://cdn.dsmcdn.com/ty399/product/media/images/20220416/10/92889877/450671191/6/6_org_zoom.jpg"
+                                     }
+                                 ],
+                      "attributes":  {
+                                         "attributeId":  494,
+                                         "attributeValueId":  23703
+                                     }
+                  }
+              ]
+}

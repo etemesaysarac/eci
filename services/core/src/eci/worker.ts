@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import dotenv from "dotenv";
 
 // Single-source .env loading (Sprint 7.1):
@@ -21,21 +22,22 @@ import dotenv from "dotenv";
 })();
 import { randomUUID } from "crypto";
 
-import { Prisma } from "@prisma/client";
 import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { prisma } from "./prisma";
 import { computeSyncWindow } from "./sync/window";
 import { decryptJson } from "./lib/crypto";
 import {
-  trendyolCreateProducts,
   trendyolGetOrders,
-  trendyolGetProductBatchRequest,
-  trendyolGetProducts,
+  trendyolListApprovedProducts,
+  trendyolListUnapprovedProducts,
+  trendyolCreateProducts,
+  trendyolUpdateProducts,
+  trendyolUpdatePriceAndInventory,
   type OrdersQuery,
+  type ProductsListQuery,
   type TrendyolConfig,
 } from "./connectors/trendyol/client";
-
 
 process.on("unhandledRejection", (e: unknown) => console.error("[unhandledRejection]", e));
 process.on("uncaughtException", (e: unknown) => console.error("[uncaughtException]", e));
@@ -103,9 +105,7 @@ type JobData = {
     startDate?: number;
     endDate?: number;
     pageSize?: number;
-      includeApproved?: boolean;
-    includeUnapproved?: boolean;
-} | null;
+  } | null;
 
   // Sprint 8: webhook raw event (receiver -> worker)
   webhook?: {
@@ -120,6 +120,10 @@ type JobData = {
     status?: string;
     windowMinutes?: number;
   } | null;
+
+  // Sprint 9: product push (API -> worker)
+  push?: { action?: "create" | "update" } | null;
+  payload?: any | null;
 };
 
 function nowIso() {
@@ -304,8 +308,8 @@ function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
     token: tokenRaw ? tokenRaw.replace(/^Basic\s+/i, "").trim() : undefined,
     apiKey,
     apiSecret,
-    agentName: String(cfg.agentName ?? process.env.TRENDYOL_AGENT_NAME ?? "Easyso").trim(),
-    integrationName: String(cfg.integrationName ?? process.env.TRENDYOL_INTEGRATION_NAME ?? "ECI").trim(),
+    agentName: String(cfg.agentName ?? "Easyso").trim(),
+    integrationName: String(cfg.integrationName ?? "ECI").trim(),
   };
 }
 
@@ -506,220 +510,8 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
 
 
 
-
-type SyncProductsParams = {
-  pageSize?: number;
-  includeApproved?: boolean;
-  includeUnapproved?: boolean;
-};
-
-type PushProductParams = {
-  productId: string;
-  batchLocalId?: string;
-  overridePayload?: any | null;
-};
-
-type RefreshProductBatchParams = {
-  batchLocalId: string;
-};
-
-function extractProductItems(resp: any): any[] {
-  if (!resp) return [];
-  if (Array.isArray(resp.content)) return resp.content;
-  if (Array.isArray(resp.items)) return resp.items;
-  if (Array.isArray(resp.data?.content)) return resp.data.content;
-  if (Array.isArray(resp.data?.items)) return resp.data.items;
-  return [];
-}
-
-function extractTotalPages(resp: any): number | null {
-  const v =
-    resp?.totalPages ??
-    resp?.pageCount ??
-    resp?.data?.totalPages ??
-    resp?.data?.pageCount ??
-    null;
-  return Number.isFinite(Number(v)) ? Number(v) : null;
-}
-
-function extractVariants(p: any): any[] {
-  if (!p) return [];
-
-  // 1) Nested variant arrays (some APIs return this)
-  const candidates = [
-    p.variants,
-    p.items,
-    p.skus,
-    p.stockItems,
-    p.productVariants,
-    p.productVariantList,
-  ];
-  for (const c of candidates) {
-    if (Array.isArray(c)) return c;
-  }
-
-  // 2) Trendyol "products" list is often *flat*: each item already represents a barcode-level SKU.
-  // In that case, treat the product item itself as a variant so ProductVariant can be populated.
-  const selfBarcode = p?.barcode ?? p?.gtin ?? p?.ean ?? p?.primaryBarcode ?? null;
-  if (selfBarcode != null) return [p];
-
-  return [];
-}
-
-function pickPrimaryBarcode(p: any): string | null {
-  const direct = p?.primaryBarcode ?? p?.barcode ?? p?.mainBarcode ?? null;
-  if (direct) return String(direct);
-  const vars = extractVariants(p);
-  const v0 = vars.find((v: any) => v?.barcode != null);
-  return v0?.barcode != null ? String(v0.barcode) : null;
-}
-
-async function upsertProductRow(connectionId: string, marketplace: string, p: any): Promise<string> {
-  const productCodeRaw = p?.productCode ?? p?.productMainId ?? p?.code ?? null;
-  const productCode = productCodeRaw != null ? String(productCodeRaw).trim() : "";
-  if (!productCode) throw new Error("product item missing productCode/productMainId");
-
-  const id = randomUUID();
-  const title = p?.title != null ? String(p.title) : null;
-  const primaryBarcode = pickPrimaryBarcode(p);
-  const brandId = Number.isFinite(Number(p?.brandId)) ? Number(p.brandId) : null;
-  const categoryId = Number.isFinite(Number(p?.pimCategoryId ?? p?.categoryId)) ? Number(p.pimCategoryId ?? p.categoryId) : null;
-  const status = p?.status != null ? String(p.status) : "UNKNOWN";
-  const approved = !!(p?.approved ?? p?.isApproved ?? false);
-  const archived = !!(p?.archived ?? p?.isArchived ?? false);
-  const raw = JSON.stringify(p ?? {});
-
-  const rows = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-    INSERT INTO "Product"
-      ("id","connectionId","marketplace","productCode","title","primaryBarcode","brandId","categoryId","status","approved","archived","raw","updatedAt")
-    VALUES
-      (${id}, ${connectionId}, ${marketplace}, ${productCode}, ${title}, ${primaryBarcode}, ${brandId}, ${categoryId}, ${status}, ${approved}, ${archived}, ${raw}::jsonb, NOW())
-    ON CONFLICT ("connectionId","marketplace","productCode")
-    DO UPDATE SET
-      "title"=EXCLUDED."title",
-      "primaryBarcode"=EXCLUDED."primaryBarcode",
-      "brandId"=EXCLUDED."brandId",
-      "categoryId"=EXCLUDED."categoryId",
-      "status"=EXCLUDED."status",
-      "approved"=EXCLUDED."approved",
-      "archived"=EXCLUDED."archived",
-      "raw"=EXCLUDED."raw",
-      "updatedAt"=NOW()
-    RETURNING "id";
-  `);
-
-  return rows?.[0]?.id ?? id;
-}
-
-async function upsertVariantRow(connectionId: string, marketplace: string, productId: string, v: any): Promise<void> {
-  const barcodeRaw = v?.barcode ?? v?.gtin ?? v?.ean ?? null;
-  const barcode = barcodeRaw != null ? String(barcodeRaw).trim() : "";
-  if (!barcode) return;
-
-  const id = randomUUID();
-
-  const stock = Number.isFinite(Number(v?.quantity ?? v?.stock ?? v?.stockCount)) ? Number(v.quantity ?? v.stock ?? v.stockCount) : null;
-  const listPrice = Number.isFinite(Number(v?.listPrice)) ? Number(v.listPrice) : null;
-  const salePrice = Number.isFinite(Number(v?.salePrice)) ? Number(v.salePrice) : null;
-  const currency = v?.currencyType ?? v?.currency ?? null;
-  const raw = JSON.stringify(v ?? {});
-
-  await prisma.$executeRaw(Prisma.sql`
-    INSERT INTO "ProductVariant"
-      ("id","connectionId","productId","marketplace","barcode","stock","listPrice","salePrice","currency","raw","updatedAt")
-    VALUES
-      (${id}, ${connectionId}, ${productId}, ${marketplace}, ${barcode}, ${stock}, ${listPrice}, ${salePrice}, ${currency}, ${raw}::jsonb, NOW())
-    ON CONFLICT ("connectionId","marketplace","barcode")
-    DO UPDATE SET
-      "productId"=EXCLUDED."productId",
-      "stock"=EXCLUDED."stock",
-      "listPrice"=EXCLUDED."listPrice",
-      "salePrice"=EXCLUDED."salePrice",
-      "currency"=EXCLUDED."currency",
-      "raw"=EXCLUDED."raw",
-      "updatedAt"=NOW();
-  `);
-}
-
-async function syncProducts(connectionId: string, cfg: TrendyolConfig, params?: SyncProductsParams | null) {
-  const marketplace = "trendyol";
-
-  const pageSizeRaw = params?.pageSize ?? 50;
-  const pageSize = Math.max(1, Math.min(200, Number(pageSizeRaw)));
-
-  const includeApproved = params?.includeApproved !== false; // default true
-  const includeUnapproved = params?.includeUnapproved !== false; // default true
-
-  const countBeforeRows = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
-    SELECT COUNT(*)::bigint as count FROM "Product" WHERE "connectionId"=${connectionId} AND "marketplace"=${marketplace};
-  `);
-  const countBefore = Number(countBeforeRows?.[0]?.count ?? 0);
-
-  let fetched = 0;
-  let productsProcessed = 0;
-  let variantsProcessed = 0;
-  let pages = 0;
-
-  async function runApprovedFlag(approved: boolean) {
-    let page = 0;
-    while (true) {
-      const resp = await trendyolGetProducts(cfg, { approved, page, size: pageSize });
-      const items = extractProductItems(resp);
-      const totalPages = extractTotalPages(resp);
-
-      pages += 1;
-
-      if (!items.length) break;
-
-      for (const p of items) {
-        fetched += 1;
-
-        // upsert product
-        const productId = await upsertProductRow(connectionId, marketplace, p);
-        productsProcessed += 1;
-
-        // upsert variants (best-effort)
-        const vars = extractVariants(p);
-        for (const v of vars) {
-          await upsertVariantRow(connectionId, marketplace, productId, v);
-          variantsProcessed += 1;
-        }
-      }
-
-      // stopping conditions
-      if (totalPages != null && page + 1 >= totalPages) break;
-      if (items.length < pageSize) break;
-
-      page += 1;
-      if (page > 200) break; // safety
-    }
-  }
-
-  if (includeApproved) await runApprovedFlag(true);
-  if (includeUnapproved) await runApprovedFlag(false);
-
-  const countAfterRows = await prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
-    SELECT COUNT(*)::bigint as count FROM "Product" WHERE "connectionId"=${connectionId} AND "marketplace"=${marketplace};
-  `);
-  const countAfter = Number(countAfterRows?.[0]?.count ?? 0);
-
-  return {
-    fetched,
-    upserted: productsProcessed,
-    variantsUpserted: variantsProcessed,
-    countBefore,
-    countAfter,
-    pageSize,
-    includeApproved,
-    includeUnapproved,
-    pages,
-  };
-}
-
-
 const SYNC_JOB_NAMES = new Set([
   "TRENDYOL_SYNC_ORDERS",
-  "TRENDYOL_SYNC_PRODUCTS",
   "TRENDYOL_SYNC_SHIPMENT_PACKAGES", // backward-compat
   "TRENDYOL_SYNC_ORDERS_TARGETED",
 ]);
@@ -752,6 +544,196 @@ function normalizeStatusForOrders(status?: string): string {
 
   const k = s.toLowerCase();
   return map[k] ?? s;
+}
+
+
+async function extractProductItems(data: any): Promise<{ items: any[]; totalPages: number | null }> {
+  const items: any[] =
+    Array.isArray(data)
+      ? data
+      : Array.isArray(data?.content)
+        ? data.content
+        : Array.isArray(data?.items)
+          ? data.items
+          : Array.isArray(data?.products)
+            ? data.products
+            : [];
+
+  const totalPages =
+    typeof data?.totalPages === "number"
+      ? data.totalPages
+      : typeof data?.pageCount === "number"
+        ? data.pageCount
+        : typeof data?.totalPageCount === "number"
+          ? data.totalPageCount
+          : null;
+
+  return { items, totalPages };
+}
+
+function safeNumber(v: any): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function syncProducts(connectionId: string, cfg: TrendyolConfig, params: any) {
+  const includeApproved = params?.includeApproved ?? true;
+  const includeUnapproved = params?.includeUnapproved ?? true;
+
+  const pageSize = Math.min(200, Math.max(1, Number(params?.pageSize ?? 50) || 50));
+  const maxPages = params?.maxPages != null ? Math.max(1, Number(params.maxPages) || 1) : null;
+
+  const marketplace = "trendyol";
+
+  let pagesFetched = 0;
+  let fetched = 0;
+  let upsertedProducts = 0;
+  let upsertedVariants = 0;
+
+  async function processList(kind: "approved" | "unapproved") {
+    let page = 0;
+    let totalPages: number | null = null;
+
+    while (totalPages === null || page < totalPages) {
+      if (maxPages != null && page >= maxPages) break;
+
+      const q: ProductsListQuery = { page, size: pageSize };
+      const data =
+        kind === "approved"
+          ? await trendyolListApprovedProducts(cfg, q)
+          : await trendyolListUnapprovedProducts(cfg, q);
+
+      const { items, totalPages: tp } = await extractProductItems(data);
+      if (totalPages === null && tp != null) totalPages = tp;
+
+      pagesFetched++;
+      if (!items.length) break;
+
+      for (const it of items) {
+        fetched++;
+
+        const barcode = String(it?.barcode ?? "").trim();
+        const productCode = String(it?.productCode ?? it?.stockCode ?? it?.productMainId ?? barcode ?? "").trim();
+        if (!productCode) continue;
+
+        const title = String(it?.title ?? it?.productName ?? "").trim() || null;
+
+        const brandId = safeNumber(it?.brandId);
+        const categoryId = safeNumber(it?.categoryId);
+
+        const rawStatus =
+          String(
+            it?.approvalStatus ??
+              it?.status ??
+              it?.productStatusType ??
+              (kind === "approved" ? "APPROVED" : "UNAPPROVED")
+          ).trim() || (kind === "approved" ? "APPROVED" : "UNAPPROVED");
+
+        const approved = kind === "approved";
+        const archived = Boolean(it?.archived) || /archived/i.test(rawStatus);
+
+        const product = await prisma.product.upsert({
+          where: {
+            connectionId_marketplace_productCode: {
+              connectionId,
+              marketplace,
+              productCode,
+            },
+          },
+          create: {
+            connectionId,
+            marketplace,
+            productCode,
+            title,
+brandId,
+            categoryId,
+            status: rawStatus,
+            approved,
+            archived,
+            raw: it,
+          },
+          update: {
+            title,
+brandId,
+            categoryId,
+            status: rawStatus,
+            approved,
+            archived,
+            raw: it,
+          },
+          select: { id: true },
+        });
+
+        upsertedProducts++;
+
+        // Variant/sku row (keyed by barcode)
+        if (barcode) {
+          const stock = safeNumber(it?.quantity ?? it?.stock ?? it?.stockQuantity);
+          const listPrice = safeNumber(it?.listPrice);
+          const salePrice = safeNumber(it?.salePrice);
+          const currency = it?.currencyType != null ? String(it.currencyType) : null;
+
+          await prisma.productVariant.upsert({
+            where: {
+              connectionId_marketplace_barcode: {
+                connectionId,
+                marketplace,
+                barcode,
+              },
+            },
+            create: {
+              connectionId,
+              marketplace,
+              barcode,
+              productId: product.id,
+              stock: stock != null ? Math.trunc(stock) : null,
+              listPrice,
+              salePrice,
+              currency,
+              raw: it,
+            },
+            update: {
+              productId: product.id,
+              stock: stock != null ? Math.trunc(stock) : null,
+              listPrice,
+              salePrice,
+              currency,
+              raw: it,
+            },
+          });
+
+          upsertedVariants++;
+        }
+      }
+
+      // If Trendyol doesn't provide totalPages, stop when we receive a short page.
+      if (totalPages === null && items.length < pageSize) break;
+
+      page++;
+    }
+  }
+
+  log("syncProducts started", {
+    connectionId,
+    includeApproved,
+    includeUnapproved,
+    pageSize,
+    maxPages,
+  });
+
+  if (includeApproved) await processList("approved");
+  if (includeUnapproved) await processList("unapproved");
+
+  log("syncProducts finished", {
+    connectionId,
+    fetched,
+    upsertedProducts,
+    upsertedVariants,
+    pagesFetched,
+  });
+
+  return { fetched, upsertedProducts, upsertedVariants, pagesFetched, pageSize };
 }
 
 function parseWebhookTarget(payload: any): { orderNumber?: string; shipmentPackageId?: string; status?: string } {
@@ -853,142 +835,62 @@ async function enqueueTrendyolSyncOrdersTargeted(connectionId: string, target: T
   }
 }
 
-const worker = 
-// -----------------------------
-// Sprint 9.3 — Product Catalog (Write Path)
-// -----------------------------
 
-function safeJson(v: any) {
+// -----------------------------------------------------------------------------
+// Worker identity + dispatch guard (Sprint 9 hardening)
+// -----------------------------------------------------------------------------
+
+const KNOWN_JOBS = [
+  "TRENDYOL_SYNC_ORDERS",
+  "TRENDYOL_SYNC_SHIPMENT_PACKAGES",
+  "TRENDYOL_SYNC_ORDERS_TARGETED",
+  "TRENDYOL_WEBHOOK_EVENT",
+  "TRENDYOL_SYNC_PRODUCTS",
+  "TRENDYOL_PUSH_PRODUCTS",
+  "TRENDYOL_PUSH_PRICE_STOCK",
+] as const;
+
+function redactUrl(u: string) {
   try {
-    return v == null ? null : JSON.parse(JSON.stringify(v));
+    const url = new URL(u);
+    if (url.username) url.username = "***";
+    if (url.password) url.password = "***";
+    return url.toString();
+  } catch {
+    return String(u ?? "").replace(/\/\/[^@]+@/g, "//***:***@");
+  }
+}
+
+function fileHash12(p: string) {
+  try {
+    const buf = fs.readFileSync(p);
+    return crypto.createHash("sha256").update(buf).digest("hex").slice(0, 12);
   } catch {
     return null;
   }
 }
 
-function cleanUndefined<T extends Record<string, any>>(obj: T): T {
-  for (const k of Object.keys(obj)) {
-    if (obj[k] === undefined) delete (obj as any)[k];
-  }
-  return obj;
-}
+(() => {
+  const entry = String(process.argv?.[1] ?? "");
+  log("WORKER_BOOT", {
+    pid: process.pid,
+    node: process.version,
+    cwd: process.cwd(),
+    entry,
+    entryHash12: entry ? fileHash12(entry) : null,
+    queue: "eci-jobs",
+    redisUrl: redactUrl(process.env.REDIS_URL ?? "redis://localhost:6379"),
+    knownJobs: KNOWN_JOBS,
+  });
+})();
 
-function normalizeVatRate(v: any): number {
-  const n = Number(v);
-  // Trendyol has changed allowed VAT sets over time; accept the union and default safely.
-  const allowed = new Set([0, 1, 8, 10, 18, 20]);
-  if (Number.isFinite(n) && allowed.has(n)) return n;
-  const def = Number(process.env.ECI_TRENDYOL_DEFAULT_VAT_RATE ?? 20);
-  return allowed.has(def) ? def : 20;
-}
-
-function pickDescription(dbProduct: any): string {
-  const raw = (dbProduct as any)?.raw ?? {};
-  const d = String((dbProduct as any)?.description ?? raw?.description ?? "").trim();
-  if (d) return d;
-  const title = String((dbProduct as any)?.title ?? "").trim();
-  return title ? `${title} (ECI)` : "ECI product";
-}
-async function ensureProductBatchRequestRow(connectionId: string, batchLocalId: string, type: string, initialSummary: any) {
-  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-    SELECT "id" FROM "ProductBatchRequest"
-    WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId}
-    LIMIT 1;
-  `);
-
-  if (rows?.length) return;
-
-  await prisma.$executeRaw(Prisma.sql`
-    INSERT INTO "ProductBatchRequest"
-      ("id","connectionId","marketplace","type","remoteBatchId","status","payloadSummary","errors","createdAt","updatedAt")
-    VALUES
-      (
-        ${batchLocalId},
-        ${connectionId},
-        ${"trendyol"},
-        ${type},
-        ${null},
-        ${"CREATED"},
-        ${JSON.stringify(initialSummary ?? {})}::jsonb,
-        ${null}::jsonb,
-        NOW(),
-        NOW()
-      );
-  `);
-}
-
-async function updateProductBatchRequestRow(
-  connectionId: string,
-  batchLocalId: string,
-  patch: { remoteBatchId?: string | null; status?: string; payloadSummary?: any; errors?: any }
-) {
-  const sets: Prisma.Sql[] = [Prisma.sql`"updatedAt" = NOW()`];
-
-  if (patch.remoteBatchId !== undefined) sets.push(Prisma.sql`"remoteBatchId" = ${patch.remoteBatchId}`);
-  if (patch.status !== undefined) sets.push(Prisma.sql`"status" = ${patch.status}`);
-  if (patch.payloadSummary !== undefined)
-    sets.push(Prisma.sql`"payloadSummary" = ${JSON.stringify(patch.payloadSummary)}::jsonb`);
-  if (patch.errors !== undefined) sets.push(Prisma.sql`"errors" = ${JSON.stringify(patch.errors)}::jsonb`);
-
-  await prisma.$executeRaw(Prisma.sql`
-    UPDATE "ProductBatchRequest"
-    SET ${Prisma.join(sets, Prisma.sql`, `)}
-    WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId};
-  `);
-}
-
-async function loadDbProduct(connectionId: string, productId: string) {
-  const rows = await prisma.$queryRaw<any[]>(Prisma.sql`
-    SELECT "id","productCode","title","brandId","categoryId","raw"
-    FROM "Product"
-    WHERE "connectionId"=${connectionId} AND "id"=${productId}
-    LIMIT 1;
-  `);
-  return rows?.[0] ?? null;
-}
-
-async function loadDbVariants(connectionId: string, productId: string) {
-  return prisma.$queryRaw<any[]>(Prisma.sql`
-    SELECT "id","barcode","stock","listPrice","salePrice","currency","raw"
-    FROM "ProductVariant"
-    WHERE "connectionId"=${connectionId} AND "productId"=${productId}
-    ORDER BY "id" ASC
-    LIMIT 5000;
-  `);
-}
-
-function extractBatchId(resp: any): string | null {
-  const raw =
-    resp?.batchRequestId ??
-    resp?.id ??
-    resp?.data?.batchRequestId ??
-    resp?.data?.id ??
-    resp?.result?.batchRequestId ??
-    resp?.result?.id ??
-    null;
-
-  const s = raw != null ? String(raw).trim() : "";
-  return s ? s : null;
-}
-
-function extractBatchStatus(resp: any): string {
-  const raw =
-    resp?.status ??
-    resp?.batchStatus ??
-    resp?.data?.status ??
-    resp?.data?.batchStatus ??
-    resp?.result?.status ??
-    resp?.result?.batchStatus ??
-    "UNKNOWN";
-
-  return String(raw).toUpperCase();
-}
-
-
-new Worker(
+const worker = new Worker(
   "eci-jobs",
   async (job: Job<JobData, any, string>) => {
-    const { connectionId, jobId, params, webhook, target } = job.data as JobData;
+    // NOTE (Sprint 9): PUSH_PRODUCTS jobs carry `push` + `payload` fields.
+    // If we don't destructure them here, the handler will throw at runtime
+    // ("push is not defined" / "payload is not defined").
+    const { connectionId, jobId, params, webhook, target, push, payload } = job.data as JobData;
 
     const attempt = job.attemptsMade + 1;
     const maxAttempts = job.opts.attempts ?? 1;
@@ -1119,131 +1021,97 @@ new Worker(
           break;
         }
 
+        case "TRENDYOL_SYNC_PRODUCTS": {
+          // Sprint 9: Product sync (Trendyol -> DB)
+          summary = await syncProducts(connectionId, cfg, params);
+          break;
+        }
 
-case "TRENDYOL_SYNC_PRODUCTS": {
-  const summary0 = await syncProducts(connectionId, cfg, (params as any) ?? undefined);
-  summary = { ...summary0, durationMs: Date.now() - t0 };
-  break;
-}
+        case "TRENDYOL_PUSH_PRODUCTS": {
+          // Sprint 9: Product create/update (DB/API -> Trendyol)
+          const actionRaw = String((push as any)?.action ?? "create").toLowerCase();
+          const action: "create" | "update" = actionRaw === "update" ? "update" : "create";
+          if (!payload) throw new Error("payload required");
 
+          const resp = action === "update"
+            ? await trendyolUpdateProducts(cfg, payload)
+            : await trendyolCreateProducts(cfg, payload);
 
-        
-        case "TRENDYOL_PUSH_PRODUCT": {
-          const p = (params as any) as PushProductParams;
-          const productId = String(p?.productId ?? "").trim();
-          const batchLocalId = String(p?.batchLocalId ?? "").trim() || randomUUID();
-          const overridePayload = (p as any)?.overridePayload ?? null;
+          const batch = (resp as any)?.batchRequestId ?? (resp as any)?.batchrequestId ?? (resp as any)?.id ?? null;
+          const remoteBatchId = batch != null ? String(batch) : null;
 
-          if (!productId) throw new Error("missing_productId");
-
-          await ensureProductBatchRequestRow(connectionId, batchLocalId, "PUSH_PRODUCT", { productId, note: "worker-start" });
-          await updateProductBatchRequestRow(connectionId, batchLocalId, { status: "SUBMITTING" });
-
-          const dbProduct = await loadDbProduct(connectionId, productId);
-          if (!dbProduct) {
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              status: "FAILED",
-              errors: { error: "product_not_found", productId },
-            });
-            summary = { ok: false, error: "product_not_found", productId, batchLocalId };
-            break;
-          }
-
-          const vars = await loadDbVariants(connectionId, productId);
-          const items = (vars ?? []).map((v: any, idx: number) =>
-            cleanUndefined({
-              // NOTE: Trendyol expects certain mandatory fields; this is a minimal best-effort mapping.
-              barcode: String(v?.barcode ?? (dbProduct?.productCode ? `${dbProduct.productCode}-${idx + 1}` : "")).trim(),
-              title: dbProduct?.title ?? null,
-              productMainId: dbProduct?.productCode ?? null,
-              brandId: dbProduct?.brandId ?? null,
-              categoryId: dbProduct?.categoryId ?? null,
-              quantity: Number(v?.stock ?? 0),
-              listPrice: Number(v?.listPrice ?? 0),
-              salePrice: Number(v?.salePrice ?? v?.listPrice ?? 0),
-              currencyType: v?.currency ?? "TRY",
-            })
-          );
-
-          const payload = overridePayload ?? { items };
-          await updateProductBatchRequestRow(connectionId, batchLocalId, {
-            status: "SUBMITTING",
-            payloadSummary: { productId, items: items.length, hasOverridePayload: !!overridePayload },
+          const pbr = await prisma.productBatchRequest.create({
+            data: {
+              connectionId,
+              marketplace: "trendyol",
+              remoteBatchId,
+              type: action === "update" ? "UPDATE_PRODUCTS" : "CREATE_PRODUCTS",
+              status: "created",
+              raw: { request: payload, response: resp },
+            },
+            select: { id: true, remoteBatchId: true },
           });
 
-          try {
-            const resp = await trendyolCreateProducts(cfg, payload);
-            const remoteBatchId = extractBatchId(resp);
-            const st = remoteBatchId ? "SUBMITTED" : "SUBMITTED_NO_BATCH_ID";
-
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              remoteBatchId,
-              status: st,
-              payloadSummary: { productId, remoteBatchId, status: st, response: safeJson(resp) },
-              errors: null,
-            });
-
-            summary = { ok: true, productId, batchLocalId, remoteBatchId, status: st };
-          } catch (e: any) {
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              status: "FAILED",
-              errors: { message: String(e?.message ?? e) },
-            });
-            summary = { ok: false, productId, batchLocalId, error: String(e?.message ?? e) };
-          }
+          summary = {
+            action,
+            productBatchRequestId: pbr.id,
+            batchRequestId: pbr.remoteBatchId,
+            durationMs: Date.now() - t0,
+          };
 
           break;
         }
 
-        case "TRENDYOL_REFRESH_PRODUCT_BATCH": {
-          const p = (params as any) as RefreshProductBatchParams;
-          const batchLocalId = String(p?.batchLocalId ?? "").trim();
-          if (!batchLocalId) throw new Error("missing_batchLocalId");
 
-          const row = await prisma.$queryRaw<any[]>(Prisma.sql`
-            SELECT "remoteBatchId" FROM "ProductBatchRequest"
-            WHERE "connectionId"=${connectionId} AND "id"=${batchLocalId}
-            LIMIT 1;
-          `);
 
-          if (!row?.length) {
-            summary = { ok: false, batchLocalId, error: "batch_not_found" };
+        case "TRENDYOL_PUSH_PRICE_STOCK": {
+          // Sprint 10: Price + stock update (DB/API -> Trendyol)
+          if (!payload) throw new Error("payload required");
+
+          const writeEnabled = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+
+          // Payload is expected to be the raw Trendyol body: { items: [...] }
+          const meta = (payload as any)?.__eci ?? null;
+          const reqBody = { ...(payload as any) };
+          if ((reqBody as any).__eci) delete (reqBody as any).__eci;
+
+          const items = Array.isArray((reqBody as any)?.items) ? (reqBody as any).items : [];
+          if (items.length === 0) throw new Error("items required");
+          if (items.length > 1000) throw new Error("max 1000 items");
+
+          if (!writeEnabled) {
+            summary = {
+              dryRun: true,
+              writeEnabled,
+              note: "TRENDYOL_WRITE_ENABLED=false → remote call skipped",
+              bodyHash: meta?.bodyHash ?? null,
+              originalCount: meta?.originalCount ?? null,
+              coalescedCount: meta?.coalescedCount ?? null,
+              itemCount: items.length,
+              durationMs: Date.now() - t0,
+            };
             break;
           }
 
-          const remoteBatchId = row?.[0]?.remoteBatchId ? String(row[0].remoteBatchId).trim() : "";
-          if (!remoteBatchId) {
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              status: "FAILED",
-              errors: { error: "missing_remoteBatchId" },
-            });
-            summary = { ok: false, batchLocalId, error: "missing_remoteBatchId" };
-            break;
-          }
+          const resp = await trendyolUpdatePriceAndInventory(cfg, reqBody);
+          const batch = (resp as any)?.batchRequestId ?? (resp as any)?.batchrequestId ?? (resp as any)?.id ?? null;
+          const batchRequestId = batch != null ? String(batch) : null;
 
-          try {
-            const resp = await trendyolGetProductBatchRequest(cfg, remoteBatchId);
-            const status = extractBatchStatus(resp);
-
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              status,
-              payloadSummary: { remoteBatchId, status, response: safeJson(resp) },
-              errors: null,
-            });
-
-            summary = { ok: true, batchLocalId, remoteBatchId, status };
-          } catch (e: any) {
-            await updateProductBatchRequestRow(connectionId, batchLocalId, {
-              status: "FAILED",
-              errors: { message: String(e?.message ?? e) },
-            });
-            summary = { ok: false, batchLocalId, remoteBatchId, error: String(e?.message ?? e) };
-          }
+          summary = {
+            dryRun: false,
+            writeEnabled,
+            bodyHash: meta?.bodyHash ?? null,
+            originalCount: meta?.originalCount ?? null,
+            coalescedCount: meta?.coalescedCount ?? null,
+            itemCount: items.length,
+            batchRequestId,
+            response: resp,
+            durationMs: Date.now() - t0,
+          };
 
           break;
         }
-
-case "TRENDYOL_WEBHOOK_EVENT": {
+        case "TRENDYOL_WEBHOOK_EVENT": {
           const payload = (webhook as any)?.payload ?? null;
           const derived = parseWebhookTarget(payload);
 
