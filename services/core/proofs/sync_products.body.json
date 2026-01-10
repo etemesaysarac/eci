@@ -1,0 +1,6 @@
+﻿{
+    "includeUnapproved":  true,
+    "pageSize":  50,
+    "includeApproved":  true,
+    "maxPages":  20
+}

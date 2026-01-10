@@ -1,0 +1,12 @@
+﻿{
+    "id":  "cmk3skw1u0001e6mkvvejbtik",
+    "connectionId":  "cmk28anrb0000e6gwaprps4hn",
+    "type":  "TRENDYOL_SYNC_PRODUCTS",
+    "status":  "failed",
+    "startedAt":  "2026-01-07T09:04:19.283Z",
+    "finishedAt":  "2026-01-07T09:04:19.315Z",
+    "summary":  null,
+    "error":  "unknown job: TRENDYOL_SYNC_PRODUCTS",
+    "createdAt":  "2026-01-07T09:04:19.265Z",
+    "updatedAt":  "2026-01-07T09:04:19.316Z"
+}

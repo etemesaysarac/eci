@@ -71,6 +71,11 @@ Worker: incremental stock/price push + (opsiyonel) scheduled reconcile
 
 Kabul: aynı SKU 10 kere güncellense de idempotent.
 
+
+
+
+
+
 Sprint 11 — Fatura Linki / Seller Invoice / Label
 
 Amaç: gerçek operasyon: fatura/etiket akışı.

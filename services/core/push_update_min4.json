@@ -1,0 +1,17 @@
+﻿{
+    "items":  [
+                  {
+                      "brandId":  1,
+                      "description":  "TEST",
+                      "currencyType":  "TRY",
+                      "vatRate":  20,
+                      "productMainId":  "TEST",
+                      "salePrice":  10,
+                      "quantity":  1,
+                      "categoryId":  1505,
+                      "barcode":  "TEST",
+                      "title":  "TEST",
+                      "listPrice":  12
+                  }
+              ]
+}

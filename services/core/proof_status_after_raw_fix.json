@@ -1,0 +1,33 @@
+﻿{
+    "connection":  {
+                       "id":  "cmk28anrb0000e6gwaprps4hn",
+                       "type":  "trendyol",
+                       "name":  "Trendyol PROD",
+                       "status":  "active",
+                       "createdAt":  "2026-01-06T06:48:43.461Z",
+                       "updatedAt":  "2026-01-06T06:48:43.461Z"
+                   },
+    "state":  {
+                  "lastAttemptAt":  null,
+                  "lastSuccessAt":  "2026-01-06T17:52:42.039Z",
+                  "lastStatus":  "IDLE",
+                  "lastJobId":  null,
+                  "lastError":  null,
+                  "updatedAt":  "2026-01-06T18:24:44.741Z"
+              },
+    "lastJob":  {
+                    "id":  "cmk7705mm0001e6t4jitm0m8d",
+                    "type":  "TRENDYOL_PUSH_PRODUCTS",
+                    "status":  "success",
+                    "startedAt":  "2026-01-09T18:11:24.687Z",
+                    "finishedAt":  "2026-01-09T18:11:24.967Z",
+                    "summary":  {
+                                    "action":  "update",
+                                    "durationMs":  253,
+                                    "batchRequestId":  "739760d4-c21b-4014-8bc0-4638ca7939fe-1768241484",
+                                    "productBatchRequestId":  "cmk7705ug0001e64wyzl1af56"
+                                },
+                    "error":  null,
+                    "createdAt":  "2026-01-09T18:11:24.671Z"
+                }
+}

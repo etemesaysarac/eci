@@ -19,15 +19,19 @@ model Connection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  jobs                 Job[]
-  orders               Order[]
+  jobs                  Job[]
+  orders                Order[]
   shipmentPackages      ShipmentPackage[]
   syncState             SyncState?
   shipmentPackageActions ShipmentPackageAction[]
-  webhookSubscriptions WebhookSubscription[]
-  webhookEvents        WebhookEvent[]
-}
+  webhookSubscriptions  WebhookSubscription[]
+  webhookEvents         WebhookEvent[]
 
+  // Sprint 9: Product Catalog
+  products              Product[]
+  productVariants       ProductVariant[]
+  productBatchRequests  ProductBatchRequest[]
+}
 
 model Job {
   id           String   @id @default(cuid())
@@ -46,32 +50,32 @@ model Job {
 }
 
 model Order {
-  id            String   @id @default(cuid())
-  connectionId  String
-  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
-  marketplace   String   @default("trendyol")
+  id             String   @id @default(cuid())
+  connectionId   String
+  connection     Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace    String   @default("trendyol")
   channelOrderId String
-  status        String?
-  raw           Json
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  status         String?
+  raw            Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Prisma name kept for code: where: { connectionId_marketplace_channelOrderId: {...} }
-  // DB constraint already exists in initial migration under this name.
+  // DB constraint already exists in migration(so_xyz) under this name.
   @@unique([connectionId, marketplace, channelOrderId], name: "connectionId_marketplace_channelOrderId", map: "Order_connectionId_marketplace_channelOrderId_key")
   @@index([connectionId])
 }
 
 model ShipmentPackage {
-  id               String   @id @default(cuid())
-  connectionId     String
-  connection       Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
-  marketplace      String   @default("trendyol")
+  id                String   @id @default(cuid())
+  connectionId      String
+  connection        Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace       String   @default("trendyol")
   shipmentPackageId String
-  status           String?
-  raw              Json
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  status            String?
+  raw               Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   // Prisma name kept for code: where: { connectionId_marketplace_shipmentPackageId: {...} }
   @@unique([connectionId, marketplace, shipmentPackageId], name: "connectionId_marketplace_shipmentPackageId", map: "ShipmentPackage_connectionId_marketplace_shipmentPackageId_key")
@@ -172,4 +176,77 @@ model WebhookEvent {
   @@unique([eventKey])
   @@index([connectionId, receivedAt])
   @@index([subscriptionId, receivedAt])
+}
+
+// Sprint 9: Product Catalog
+model Product {
+  id           String     @id @default(cuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace  String     @default("trendyol")
+
+  productCode  String
+  title        String?
+  brandId      Int?
+  categoryId   Int?
+  status       String?
+  approved     Boolean    @default(true)
+  archived     Boolean    @default(false)
+
+  raw          Json
+
+  variants     ProductVariant[]
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, productCode], map: "Product_connectionId_marketplace_productCode_key")
+  @@index([connectionId])
+  @@index([productCode])
+}
+
+model ProductVariant {
+  id           String     @id @default(cuid())
+  connectionId String
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace  String     @default("trendyol")
+
+  productId    String
+  product      Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  barcode      String
+  stock        Int?
+  listPrice    Decimal?   @db.Decimal(18, 4)
+  salePrice    Decimal?   @db.Decimal(18, 4)
+  currency     String?
+
+  raw          Json
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, barcode], map: "ProductVariant_connectionId_marketplace_barcode_key")
+  @@index([connectionId])
+  @@index([barcode])
+  @@index([productId])
+}
+
+model ProductBatchRequest {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  remoteBatchId String?
+  type          String
+  status        String     @default("created")
+
+  raw           Json?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, remoteBatchId], map: "ProductBatchRequest_connectionId_marketplace_remoteBatchId_key")
+  @@index([connectionId])
+  @@index([remoteBatchId])
 }
