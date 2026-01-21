@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
@@ -29,12 +30,18 @@ import { computeSyncWindow } from "./sync/window";
 import { decryptJson } from "./lib/crypto";
 import {
   trendyolGetOrders,
+  trendyolGetClaims,
+  trendyolApproveClaimLineItems,
+  trendyolCreateClaimIssue,
+  trendyolGetClaimAudits,
+  trendyolCreateClaim,
   trendyolListApprovedProducts,
   trendyolListUnapprovedProducts,
   trendyolCreateProducts,
   trendyolUpdateProducts,
   trendyolUpdatePriceAndInventory,
   type OrdersQuery,
+  type ClaimsQuery,
   type ProductsListQuery,
   type TrendyolConfig,
 } from "./connectors/trendyol/client";
@@ -92,6 +99,13 @@ async function releaseSyncLock(connectionId: string, jobId: string) {
 }
 
 const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+redis.on("error", (e: any) => {
+  const msg = e?.message ?? String(e);
+  console.error("[redis:error]", msg);
+});
+redis.on("connect", () => console.log("[redis] connect"));
+redis.on("ready", () => console.log("[redis] ready"));
+
 const eciQueue = new Queue("eci-jobs", { connection: redis });
 
 
@@ -508,12 +522,428 @@ async function syncOrders(connectionId: string, cfg: TrendyolConfig, params?: Jo
   };
 }
 
+function toDateMaybe(v: any): Date | null {
+  if (v == null) return null;
+  if (v instanceof Date) return Number.isFinite(v.getTime()) ? v : null;
+  if (typeof v === "number") {
+    // Heuristic: seconds vs milliseconds
+    const ms = v > 1e12 ? v : v * 1000;
+    const d = new Date(ms);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (!s) return null;
+    const d = new Date(s);
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  return null;
+}
+
+function extractClaimItems(data: any): { items: any[]; totalPages: number | null } {
+  const items: any[] =
+    Array.isArray(data)
+      ? data
+      : Array.isArray(data?.content)
+        ? data.content
+        : Array.isArray(data?.claims)
+          ? data.claims
+          : Array.isArray(data?.items)
+            ? data.items
+            : [];
+
+  const totalPages =
+    typeof data?.totalPages === "number"
+      ? data.totalPages
+      : typeof data?.pageCount === "number"
+        ? data.pageCount
+        : typeof data?.totalPageCount === "number"
+          ? data.totalPageCount
+          : null;
+
+  return { items, totalPages };
+}
+
+async function syncClaims(connectionId: string, cfg: TrendyolConfig, params?: JobData["params"]) {
+  const now = Date.now();
+  const pageSize = params?.pageSize ?? 50;
+
+  const endDate = typeof params?.endDate === "number" ? params.endDate : now;
+  const startDate = typeof params?.startDate === "number" ? params.startDate : endDate - 7 * 24 * 3600 * 1000;
+
+  // Trendyol claims list supports claimItemStatus filter.
+  const claimItemStatus = params?.status != null && String(params.status).trim().length ? String(params.status).trim() : undefined;
+
+  log("syncClaims started", { connectionId, startDate, endDate, pageSize, claimItemStatus });
+
+  const q: ClaimsQuery = {
+    page: 0,
+    size: pageSize,
+    startDate,
+    endDate,
+    claimItemStatus,
+  };
+
+  const data: any = await trendyolGetClaims(cfg, q);
+  const { items: claims } = extractClaimItems(data);
+
+  let fetchedClaims = 0;
+  let upsertedClaims = 0;
+  let upsertedItems = 0;
+
+  for (const claim of claims) {
+    fetchedClaims++;
+
+    const marketplace = "trendyol";
+    const claimId = String(claim?.claimId ?? claim?.id ?? "").trim();
+    if (!claimId) continue;
+
+    const status = claim?.status != null ? String(claim.status) : null;
+    const orderNumber = claim?.orderNumber != null ? String(claim.orderNumber) : null;
+    const claimDate = toDateMaybe(claim?.claimDate ?? claim?.claimDateTime ?? claim?.createdDate);
+    const lastModifiedAt = toDateMaybe(claim?.lastModifiedDate ?? claim?.lastModifiedAt ?? claim?.modifiedDate);
+
+    const existingClaim = await prisma.claim.findFirst({
+      where: { connectionId, marketplace, claimId },
+      select: { id: true },
+    });
+
+    const claimDb = existingClaim
+      ? await prisma.claim.update({
+          where: { id: existingClaim.id },
+          data: {
+            status,
+            orderNumber,
+            claimDate,
+            lastModifiedAt,
+            raw: (claim ?? {}) as any,
+          },
+          select: { id: true },
+        })
+      : await prisma.claim.create({
+          data: {
+            connectionId,
+            marketplace,
+            claimId,
+            status,
+            orderNumber,
+            claimDate,
+            lastModifiedAt,
+            raw: (claim ?? {}) as any,
+          },
+          select: { id: true },
+        });
+
+    upsertedClaims++;
+
+    // Trendyol: claimLineItemIdList is guaranteed; sometimes full line items also exist.
+    const lineItems: any[] =
+      Array.isArray(claim?.claimLineItems)
+        ? claim.claimLineItems
+        : Array.isArray(claim?.claimItems)
+          ? claim.claimItems
+          : Array.isArray(claim?.items)
+            ? claim.items
+            : [];
+
+    const idListRaw: any[] = Array.isArray(claim?.claimLineItemIdList) ? claim.claimLineItemIdList : [];
+
+    const itemsToWrite = lineItems.length
+      ? lineItems
+      : idListRaw.map((id) => ({ claimLineItemId: id }));
+
+    for (const li of itemsToWrite) {
+      const claimItemId = String(li?.claimLineItemId ?? li?.claimItemId ?? li?.id ?? "").trim();
+      if (!claimItemId) continue;
+
+      const barcode = li?.barcode != null ? String(li.barcode) : null;
+      const sku = li?.merchantSku != null ? String(li.merchantSku) : li?.sku != null ? String(li.sku) : null;
+      const quantity = li?.quantity != null ? Number(li.quantity) : null;
+      const itemStatus = li?.status != null ? String(li.status) : li?.claimItemStatus != null ? String(li.claimItemStatus) : null;
+
+      const reasonCode = li?.reasonCode != null ? String(li.reasonCode) : li?.reasonId != null ? String(li.reasonId) : null;
+      const reasonName = li?.reasonName != null ? String(li.reasonName) : li?.reason != null ? String(li.reason) : null;
+
+      const existingItem = await prisma.claimItem.findFirst({
+        where: { connectionId, marketplace, claimItemId },
+        select: { id: true },
+      });
+
+      if (existingItem) {
+        await prisma.claimItem.update({
+          where: { id: existingItem.id },
+          data: {
+            claimDbId: claimDb.id,
+            claimId,
+            barcode,
+            sku,
+            quantity: quantity != null && Number.isFinite(quantity) ? Math.trunc(quantity) : null,
+            itemStatus,
+            reasonCode,
+            reasonName,
+            raw: (li ?? {}) as any,
+          },
+        });
+      } else {
+        await prisma.claimItem.create({
+          data: {
+            connectionId,
+            marketplace,
+            claimDbId: claimDb.id,
+            claimId,
+            claimItemId,
+            barcode,
+            sku,
+            quantity: quantity != null && Number.isFinite(quantity) ? Math.trunc(quantity) : null,
+            itemStatus,
+            reasonCode,
+            reasonName,
+            raw: (li ?? {}) as any,
+          },
+        });
+      }
+
+      upsertedItems++;
+    }
+  }
+
+  log("syncClaims finished", { connectionId, fetchedClaims, upsertedClaims, upsertedItems });
+
+  return {
+    fetchedClaims,
+    upsertedClaims,
+    upsertedItems,
+    pageSize,
+    claimItemStatus,
+    startDate,
+    endDate,
+    requestedPages: 1,
+  };
+}
+
+
+async function enforceClaimsWriteRateLimit(connectionId: string) {
+  // Trendyol limits: approve/reject/createClaim = 5 req / minute
+  const key = `eci:ratelimit:trendyol:claims_write:${connectionId}`;
+  const n = await redis.incr(key);
+  if (n === 1) {
+    await redis.pexpire(key, 60_000);
+  }
+  if (n > 5) {
+    throw new Error(`rate_limit_exceeded claims_write n=${n} limit=5`);
+  }
+}
+
+async function finishClaimCommand(commandId: string | null | undefined, data: { status: string; response?: any; error?: any }) {
+  if (!commandId) return;
+  await prisma.claimCommand.update({
+    where: { id: commandId },
+    data: {
+      status: data.status as any,
+      response: data.response ?? undefined,
+      error: data.error ? { message: String(data.error?.message ?? data.error), raw: data.error } : undefined,
+      finishedAt: new Date(),
+    },
+  }).catch(() => undefined);
+}
+
+async function approveClaimItems(connectionId: string, cfg: TrendyolConfig, params?: any) {
+  const claimId = String(params?.claimId ?? "");
+  const claimLineItemIdList: string[] | null =
+    Array.isArray(params?.claimLineItemIdList) ? params.claimLineItemIdList.map(String) : null;
+  const claimCommandId = params?.claimCommandId ? String(params.claimCommandId) : null;
+  const dryRun = !!params?.dryRun;
+
+  if (!claimId) throw new Error("claimId required");
+
+  try {
+    await enforceClaimsWriteRateLimit(connectionId);
+
+    const writeEnabledEnv = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+    if (dryRun || !writeEnabledEnv) {
+      const note = dryRun
+        ? "dryRun=1 → remote call skipped"
+        : "TRENDYOL_WRITE_ENABLED=false → remote call skipped";
+      const resp = { ok: true, dryRun: true, note, claimId, claimLineItemIdList };
+      await finishClaimCommand(claimCommandId, { status: "succeeded", response: resp });
+      return resp;
+    }
+
+    const resp = await trendyolApproveClaimLineItems(cfg, {
+      claimId,
+      claimLineItemIdList: claimLineItemIdList ?? [],
+    });
+
+    // Collect audits as "proof" and sync item statuses based on latest audit entry.
+    const auditsByItem: Record<string, any[]> = {};
+    const itemsToAudit = claimLineItemIdList ?? [];
+    for (const claimItemId of itemsToAudit) {
+      try {
+        const audits = await trendyolGetClaimAudits(cfg, claimItemId);
+        auditsByItem[claimItemId] = audits ?? [];
+      } catch (e) {
+        auditsByItem[claimItemId] = [{ error: String((e as any)?.message ?? e) }];
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      for (const claimItemId of Object.keys(auditsByItem)) {
+        const dbItem = await tx.claimItem.findFirst({
+          where: { connectionId, marketplace: "trendyol", claimItemId },
+          select: { id: true, itemStatus: true },
+        });
+        if (!dbItem) continue;
+
+        const audits = auditsByItem[claimItemId] ?? [];
+        // Write audits (best effort; avoid duplicates via unique constraint)
+        for (const a of audits) {
+          if (!a || a.error) continue;
+          const date = new Date(a.date);
+          const newStatus = String(a.newStatus ?? "");
+          if (!newStatus) continue;
+
+          await tx.claimAudit
+            .create({
+              data: {
+                connectionId,
+                marketplace: "trendyol",
+                claimItemDbId: dbItem.id,
+                previousStatus: String(a.previousStatus ?? null),
+                newStatus,
+                executorApp: String(a.executorApp ?? null),
+                executorUser: String(a.executorUser ?? null),
+                date,
+                raw: a,
+              },
+            })
+            .catch(() => undefined);
+        }
+
+        // Update itemStatus to the latest audit status if present
+        const last = audits
+          .filter((x) => x && !x.error && x.date)
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+          .slice(-1)[0];
+
+        if (last?.newStatus) {
+          await tx.claimItem.update({ where: { id: dbItem.id }, data: { itemStatus: String(last.newStatus) } });
+        }
+      }
+    });
+
+    const out = { ok: true, claimId, response: resp, auditsCollected: Object.keys(auditsByItem).length };
+    await finishClaimCommand(claimCommandId, { status: "succeeded", response: out });
+    return out;
+  } catch (e: any) {
+    await finishClaimCommand(claimCommandId, { status: "failed", error: e });
+    throw e;
+  }
+}
+
+async function rejectClaimIssue(connectionId: string, cfg: TrendyolConfig, params?: any) {
+  const claimId = String(params?.claimId ?? "");
+  const claimLineItemIdList: string[] = Array.isArray(params?.claimLineItemIdList)
+    ? params.claimLineItemIdList.map(String)
+    : [];
+  const claimIssueReasonId = Number(params?.claimIssueReasonId);
+  const description = String(params?.description ?? "");
+  const fileName = params?.fileName ? String(params.fileName) : null;
+  const fileBase64 = params?.fileBase64 ? String(params.fileBase64) : null;
+  const claimCommandId = params?.claimCommandId ? String(params.claimCommandId) : null;
+  const dryRun = !!params?.dryRun;
+
+  if (!claimId) throw new Error("claimId required");
+  if (!claimLineItemIdList.length) throw new Error("claimLineItemIdList required");
+  if (!claimIssueReasonId || Number.isNaN(claimIssueReasonId)) throw new Error("claimIssueReasonId required");
+  if (!description) throw new Error("description required");
+
+  try {
+    await enforceClaimsWriteRateLimit(connectionId);
+
+    const writeEnabledEnv = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+    if (dryRun || !writeEnabledEnv) {
+      const note = dryRun
+        ? "dryRun=1 → remote call skipped"
+        : "TRENDYOL_WRITE_ENABLED=false → remote call skipped";
+      const resp = { ok: true, dryRun: true, note, claimId, claimLineItemIdList, claimIssueReasonId };
+      await finishClaimCommand(claimCommandId, { status: "succeeded", response: resp });
+      return resp;
+    }
+
+    const fileNotRequired = [1651, 451, 2101].includes(claimIssueReasonId);
+    if (!fileNotRequired && !fileBase64) {
+      throw new Error(`file required for claimIssueReasonId=${claimIssueReasonId}`);
+    }
+
+    const file =
+      fileBase64 && fileName
+        ? {
+            filename: fileName,
+            contentType: fileName.toLowerCase().endsWith(".pdf")
+              ? "application/pdf"
+              : fileName.toLowerCase().match(/\.(png|jpg|jpeg|webp)$/)
+                ? `image/${fileName.toLowerCase().split(".").pop()}`
+                : "application/octet-stream",
+            buffer: Buffer.from(fileBase64, "base64"),
+          }
+        : null;
+
+    const resp = await trendyolCreateClaimIssue(cfg, {
+      claimId,
+      claimItemIdList: claimLineItemIdList,
+      claimIssueReasonId,
+      description,
+      file: file ? { filename: file.filename, contentType: file.contentType, buffer: file.buffer } : undefined,
+    });
+
+    const out = { ok: true, claimId, response: resp };
+    await finishClaimCommand(claimCommandId, { status: "succeeded", response: out });
+    return out;
+  } catch (e: any) {
+    await finishClaimCommand(claimCommandId, { status: "failed", error: e });
+    throw e;
+  }
+}
+
+async function createClaimCommand(connectionId: string, cfg: TrendyolConfig, params?: any) {
+  const claimCommandId = params?.claimCommandId ? String(params.claimCommandId) : null;
+  const dryRun = !!params?.dryRun;
+  const body = params?.body ?? null;
+  if (!body) throw new Error("body required");
+
+  try {
+    await enforceClaimsWriteRateLimit(connectionId);
+
+    const writeEnabledEnv = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+    if (dryRun || !writeEnabledEnv) {
+      const note = dryRun
+        ? "dryRun=1 → remote call skipped"
+        : "TRENDYOL_WRITE_ENABLED=false → remote call skipped";
+      const resp = { ok: true, dryRun: true, note };
+      await finishClaimCommand(claimCommandId, { status: "succeeded", response: resp });
+      return resp;
+    }
+
+    const resp = await trendyolCreateClaim(cfg, body);
+    const out = { ok: true, response: resp };
+    await finishClaimCommand(claimCommandId, { status: "succeeded", response: out });
+    return out;
+  } catch (e: any) {
+    await finishClaimCommand(claimCommandId, { status: "failed", error: e });
+    throw e;
+  }
+}
+
 
 
 const SYNC_JOB_NAMES = new Set([
   "TRENDYOL_SYNC_ORDERS",
   "TRENDYOL_SYNC_SHIPMENT_PACKAGES", // backward-compat
   "TRENDYOL_SYNC_ORDERS_TARGETED",
+  "TRENDYOL_SYNC_CLAIMS",
+  "TRENDYOL_CLAIM_APPROVE",
+  "TRENDYOL_CLAIM_REJECT_ISSUE",
+  "TRENDYOL_CLAIM_CREATE",
 ]);
 
 function isSyncJob(name: string) {
@@ -844,6 +1274,10 @@ const KNOWN_JOBS = [
   "TRENDYOL_SYNC_ORDERS",
   "TRENDYOL_SYNC_SHIPMENT_PACKAGES",
   "TRENDYOL_SYNC_ORDERS_TARGETED",
+  "TRENDYOL_SYNC_CLAIMS",
+  "TRENDYOL_CLAIM_APPROVE",
+  "TRENDYOL_CLAIM_REJECT_ISSUE",
+  "TRENDYOL_CLAIM_CREATE",
   "TRENDYOL_WEBHOOK_EVENT",
   "TRENDYOL_SYNC_PRODUCTS",
   "TRENDYOL_PUSH_PRODUCTS",
@@ -1021,6 +1455,31 @@ const worker = new Worker(
           break;
         }
 
+        case "TRENDYOL_SYNC_CLAIMS": {
+          summary = await syncClaims(connectionId, cfg, params ?? undefined);
+          summary = {
+            ...summary,
+            durationMs: Date.now() - t0,
+          };
+          break;
+        }
+
+
+case "TRENDYOL_CLAIM_APPROVE": {
+  summary = await approveClaimItems(connectionId, cfg, params ?? undefined);
+  break;
+}
+
+case "TRENDYOL_CLAIM_REJECT_ISSUE": {
+  summary = await rejectClaimIssue(connectionId, cfg, params ?? undefined);
+  break;
+}
+
+case "TRENDYOL_CLAIM_CREATE": {
+  summary = await createClaimCommand(connectionId, cfg, params ?? undefined);
+  break;
+}
+
         case "TRENDYOL_SYNC_PRODUCTS": {
           // Sprint 9: Product sync (Trendyol -> DB)
           summary = await syncProducts(connectionId, cfg, params);
@@ -1068,7 +1527,7 @@ const worker = new Worker(
           // Sprint 10: Price + stock update (DB/API -> Trendyol)
           if (!payload) throw new Error("payload required");
 
-          const writeEnabled = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+          const writeEnabledEnv = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
 
           // Payload is expected to be the raw Trendyol body: { items: [...] }
           const meta = (payload as any)?.__eci ?? null;
@@ -1079,11 +1538,25 @@ const worker = new Worker(
           if (items.length === 0) throw new Error("items required");
           if (items.length > 1000) throw new Error("max 1000 items");
 
+          const dryRun = !!meta?.dryRun;
+          const forceWriteParam = !!meta?.forceWrite;
+
+          const forceWriteAllowed =
+            String(process.env.ECI_ALLOW_FORCE_WRITE ?? "").toLowerCase() === "true" ||
+            String(process.env.NODE_ENV ?? "").toLowerCase() !== "production";
+
+          const forceWriteEffective = forceWriteParam && forceWriteAllowed && !dryRun;
+          const writeEnabled = (writeEnabledEnv || forceWriteEffective) && !dryRun;
+
           if (!writeEnabled) {
             summary = {
-              dryRun: true,
+              dryRun,
               writeEnabled,
-              note: "TRENDYOL_WRITE_ENABLED=false → remote call skipped",
+              writeEnabledEnv,
+              forceWriteParam,
+              forceWriteAllowed,
+              forceWriteEffective,
+              note: dryRun ? "dryRun=1 → remote call skipped" : "TRENDYOL_WRITE_ENABLED=false → remote call skipped",
               bodyHash: meta?.bodyHash ?? null,
               originalCount: meta?.originalCount ?? null,
               coalescedCount: meta?.coalescedCount ?? null,
@@ -1100,6 +1573,10 @@ const worker = new Worker(
           summary = {
             dryRun: false,
             writeEnabled,
+            writeEnabledEnv,
+            forceWriteParam,
+            forceWriteAllowed,
+            forceWriteEffective,
             bodyHash: meta?.bodyHash ?? null,
             originalCount: meta?.originalCount ?? null,
             coalescedCount: meta?.coalescedCount ?? null,

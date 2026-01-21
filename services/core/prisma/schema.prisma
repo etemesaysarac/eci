@@ -31,6 +31,15 @@ model Connection {
   products              Product[]
   productVariants       ProductVariant[]
   productBatchRequests  ProductBatchRequest[]
+
+  // Sprint 10: Inventory
+  inventoryConfirmedStates InventoryConfirmedState[]
+
+  // Sprint 12: Claims / Iade
+  claims                Claim[]
+  claimItems            ClaimItem[]
+  claimAudits           ClaimAudit[]
+  claimCommands         ClaimCommand[]
 }
 
 model Job {
@@ -249,4 +258,137 @@ model ProductBatchRequest {
   @@unique([connectionId, marketplace, remoteBatchId], map: "ProductBatchRequest_connectionId_marketplace_remoteBatchId_key")
   @@index([connectionId])
   @@index([remoteBatchId])
+}
+
+
+// Sprint 10 — Inventory confirmed state (used for changed-only diff)
+model InventoryConfirmedState {
+  connectionId       String
+  barcode            String
+  quantity           Int
+  salePrice          Decimal   @db.Decimal(18, 4)
+  listPrice          Decimal   @db.Decimal(18, 4)
+  currencyType       String?
+  lastBatchRequestId String?
+  lastConfirmedAt    DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@id([connectionId, barcode])
+  @@index([connectionId])
+  @@index([barcode])
+  @@map("inventory_confirmed_state")
+}
+
+
+// Sprint 12: Claims / Iade
+model Claim {
+  id             String     @id @default(cuid())
+  connectionId   String
+  connection     Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace    String     @default("trendyol")
+
+  claimId         String
+  status          String?
+  orderNumber     String?
+  claimDate       DateTime?
+  lastModifiedAt  DateTime?
+
+  raw            Json
+
+  items          ClaimItem[]
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, claimId], map: "Claim_connectionId_marketplace_claimId_key")
+  @@index([connectionId])
+  @@index([claimId])
+  @@index([status])
+}
+
+model ClaimItem {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  claimDbId     String
+  claim         Claim      @relation(fields: [claimDbId], references: [id], onDelete: Cascade)
+
+  claimId       String
+  claimItemId   String
+
+  barcode       String?
+  sku           String?
+  quantity      Int?
+  itemStatus    String?
+
+  reasonCode    String?
+  reasonName    String?
+
+  raw           Json
+
+  audits        ClaimAudit[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, claimItemId], map: "ClaimItem_connectionId_marketplace_claimItemId_key")
+  @@index([connectionId])
+  @@index([claimDbId])
+  @@index([claimItemId])
+  @@index([barcode])
+}
+
+model ClaimAudit {
+  id             String     @id @default(cuid())
+  connectionId   String
+  connection     Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  marketplace    String     @default("trendyol")
+
+  claimItemDbId  String
+  claimItem      ClaimItem  @relation(fields: [claimItemDbId], references: [id], onDelete: Cascade)
+
+  previousStatus String?
+  newStatus      String?
+  executorApp    String?
+  executorUser   String?
+  date           DateTime
+
+  raw            Json
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // NOTE: Postgres identifier limit is 63 bytes; keep DB constraint names short.
+  @@unique([connectionId, marketplace, claimItemDbId, date, newStatus], map: "uq_claim_audit")
+  @@index([connectionId])
+  @@index([claimItemDbId])
+  @@index([date])
+}
+
+model ClaimCommand {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  claimId       String?
+  commandType   String
+  status        String     @default("queued")
+
+  request       Json
+  response      Json?
+  error         String?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([connectionId])
+  @@index([claimId])
+  @@index([commandType])
+  @@index([status])
 }

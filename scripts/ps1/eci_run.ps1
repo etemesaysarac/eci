@@ -1,38 +1,59 @@
-﻿param(
-  [string]$CoreDir   = "C:\dev\eci\services\core",
-  [string]$ApiLog    = "C:\dev\eci\api.log",
+param(
+  [Parameter(Mandatory=$false)]
+  [string]$CoreDir = "C:\dev\eci\services\core",
+
+  [Parameter(Mandatory=$false)]
+  [int]$ApiPort = 3001,
+
+  [Parameter(Mandatory=$false)]
+  [string]$ApiLog = "C:\dev\eci\api.log",
+
+  [Parameter(Mandatory=$false)]
   [string]$WorkerLog = "C:\dev\eci\worker.log",
-  [int]$ApiPort      = 3001
+
+  [Parameter(Mandatory=$false)]
+  [string]$EnvFile = ""
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Get-ListeningProcess([int]$port) {
-  try {
-    $c = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -First 1
-    if ($c) {
-      $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
-      return @{ Port=$port; Pid=$c.OwningProcess; Name=($p.ProcessName) }
-    }
-  } catch {}
-  return $null
+if(!(Test-Path -LiteralPath $CoreDir)){
+  throw "CoreDir bulunamadı: $CoreDir"
 }
 
-if (-not (Test-Path $CoreDir)) {
-  throw "Core dizini bulunamadı: $CoreDir"
+function Start-ECIProcess {
+  param(
+    [string]$Name,
+    [string]$Cmd
+  )
+  $envPart = ""
+  if($EnvFile -and (Test-Path -LiteralPath $EnvFile)){
+    # npm script'lerin içindeki dotenv load mekanizmasına ek olarak destek
+    $envPart = "`$env:ECI_ENV_FILE = '$EnvFile'; "
+  }
+
+  $psCommand = "cd '$CoreDir'; $envPart $Cmd 2>&1 | Tee-Object -FilePath '$($Name)'"
+  # PowerShell pencere başlığı için
+  $argList = @(
+    "-NoExit",
+    "-Command",
+    $psCommand
+  )
+
+  # Log yolu gelen parametreye göre seç
+  $logPath = if($Name -eq "API"){ $ApiLog } else { $WorkerLog }
+  $psCommand = "cd '$CoreDir'; $envPart $Cmd 2>&1 | Tee-Object -FilePath '$logPath'"
+  $argList = @("-NoExit","-Command",$psCommand)
+
+  Start-Process -FilePath "pwsh" -ArgumentList $argList -WorkingDirectory $CoreDir | Out-Null
+  Write-Host "Started: $Name -> $logPath"
 }
 
-$lp = Get-ListeningProcess -port $ApiPort
-if ($lp) {
-  Write-Host ("UYARI: {0} portu LISTEN. Pid={1} Name={2}. Zaten API çalışıyor olabilir; ikinci kez açmayacağım." -f $lp.Port, $lp.Pid, $lp.Name) -ForegroundColor Yellow
-} else {
-  Write-Host "API penceresi açılıyor..." -ForegroundColor Cyan
-  $apiCmd = 'cd "{0}"; npm run eci:api 2>&1 | Tee-Object -FilePath "{1}"' -f $CoreDir, $ApiLog
-  Start-Process -FilePath "pwsh" -ArgumentList @("-NoExit","-Command",$apiCmd) | Out-Null
-}
+# Başlat
+Start-ECIProcess -Name "API" -Cmd "npm run eci:api"
+Start-ECIProcess -Name "WORKER" -Cmd "npm run eci:worker"
 
-Write-Host "Worker penceresi açılıyor..." -ForegroundColor Cyan
-$workerCmd = 'cd "{0}"; npm run eci:worker 2>&1 | Tee-Object -FilePath "{1}"' -f $CoreDir, $WorkerLog
-Start-Process -FilePath "pwsh" -ArgumentList @("-NoExit","-Command",$workerCmd) | Out-Null
-
-Write-Host "`nReady ✅  (loglar: api.log / worker.log)" -ForegroundColor Green
+Write-Host ""
+Write-Host "Kontrol:"
+Write-Host "  curl.exe -i http://127.0.0.1:$ApiPort/health"

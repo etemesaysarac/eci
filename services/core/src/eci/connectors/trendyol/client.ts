@@ -84,6 +84,92 @@ function resolveIntegrationBaseUrl(cfg: TrendyolConfig): string {
   return stripTrailingSlashes(envToIntegrationBaseUrl(env));
 }
 
+/**
+ * Stable/Canonical gateway base URL for endpoints documented under apigw.trendyol.com.
+ *
+ * Why this exists:
+ * - Some seller accounts see 401/403/"WAF" style errors when hitting legacy hosts (api.trendyol.com).
+ * - Trendyol.pdf examples for seller ops (addresses / commonlabel / seller-invoice-*) and recommended
+ *   order listing are on apigw.trendyol.com (or stageapigw.trendyol.com).
+ * - We still allow local/proxy overrides for testing.
+ */
+function resolveApigwBaseUrl(cfg: TrendyolConfig): string {
+  const env = cfg.env ?? "prod";
+
+  const override = cfg.baseUrl?.trim();
+  if (override) {
+    // If override points to Trendyol's legacy/non-apigw hosts, ignore it for apigw-canonical endpoints.
+    // Non-Trendyol overrides (local proxies) stay.
+    try {
+      const u = new URL(override);
+      const host = u.hostname.toLowerCase();
+      const isTrendyolHost = host.endsWith("trendyol.com") || host.endsWith("tgoapis.com");
+      const isApigwHost = host === "apigw.trendyol.com" || host === "stageapigw.trendyol.com";
+      if (isTrendyolHost && !isApigwHost) {
+        return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+      }
+      return stripTrailingSlashes(override);
+    } catch {
+      return stripTrailingSlashes(override);
+    }
+  }
+
+  // Repo-level env var (root: TRENDYOL_BASE_URL). Accept only apigw.* for Trendyol-owned domains.
+  const apigw = process.env.TRENDYOL_BASE_URL?.trim();
+  if (apigw) {
+    try {
+      const u = new URL(apigw);
+      const host = u.hostname.toLowerCase();
+      const isTrendyolHost = host.endsWith("trendyol.com") || host.endsWith("tgoapis.com");
+      const isApigwHost = host === "apigw.trendyol.com" || host === "stageapigw.trendyol.com";
+      if (isTrendyolHost && !isApigwHost) {
+        return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+      }
+      return stripTrailingSlashes(apigw);
+    } catch {
+      // If TRENDYOL_BASE_URL is malformed, ignore it.
+    }
+  }
+
+  return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+}
+
+function extractUpstreamStatusFromErrorMessage(message: string): number | null {
+  const msg = String(message || '');
+  // trendyolFetch errors usually look like: "Trendyol API call failed (556): ..."
+  const m1 = msg.match(/\((\d{3})\)/);
+  if (m1) return Number(m1[1]);
+  const m2 = msg.match(/\bstatus\s*[:=]\s*(\d{3})\b/i);
+  if (m2) return Number(m2[1]);
+  return null;
+}
+
+function shouldFallbackCommonLabel(status: number | null, message: string): boolean {
+  // 556: Trendyol gateway 'Service Unavailable' seen on commonlabel for some carriers
+  // also allow transient 502/503/504.
+  if (!status) return false;
+  return [502, 503, 504, 556].includes(status);
+}
+
+async function trendyolFetchWithFallback<T>(
+  cfg: TrendyolConfig,
+  primaryUrl: string,
+  fallbackUrl: string | null,
+  options?: Parameters<typeof trendyolFetch>[2],
+): Promise<T> {
+  try {
+    return await trendyolFetch<T>(cfg, primaryUrl, options);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    const status = extractUpstreamStatusFromErrorMessage(msg);
+    if (fallbackUrl && fallbackUrl !== primaryUrl && shouldFallbackCommonLabel(status, msg)) {
+      return await trendyolFetch<T>(cfg, fallbackUrl, options);
+    }
+    throw e;
+  }
+}
+
+
 // Ürün servisleri (product) için dokümantasyondaki “resmi” host apigw.trendyol.com'dur.
 // Bazı kurulumlarda cfg.preferSapigw=true ile api.trendyol.com (sapigw) seçilebiliyor.
 // Orders tarafında bu bazen işe yarasa da, product create/update gibi uçlarda 400 (bad.request)
@@ -95,14 +181,14 @@ function resolveProductBaseUrl(cfg: TrendyolConfig): string {
   // explicit override (proxy/mocks) still allowed
   const override = cfg.baseUrl?.trim();
   if (override) {
-    // If override points to Trendyol's legacy host (api.trendyol.com/stageapi.trendyol.com),
-    // ignore it for PRODUCT endpoints and force apigw. Non-Trendyol overrides (local proxies) stay.
+    // If override points to Trendyol's legacy/non-apigw hosts, ignore it for PRODUCT endpoints.
+    // Non-Trendyol overrides (local proxies) stay.
     try {
       const u = new URL(override);
       const host = u.hostname.toLowerCase();
-      const isTrendyolHost = host.endsWith("trendyol.com");
-      const isLegacySapigw = host === "api.trendyol.com" || host === "stageapi.trendyol.com";
-      if (isTrendyolHost && isLegacySapigw) {
+      const isTrendyolHost = host.endsWith("trendyol.com") || host.endsWith("tgoapis.com");
+      const isApigwHost = host === "apigw.trendyol.com" || host === "stageapigw.trendyol.com";
+      if (isTrendyolHost && !isApigwHost) {
         return stripTrailingSlashes(envToIntegrationBaseUrl(env));
       }
       return stripTrailingSlashes(override);
@@ -111,9 +197,22 @@ function resolveProductBaseUrl(cfg: TrendyolConfig): string {
     }
   }
 
-  // Prefer apigw env var
+  // Prefer apigw env var, but guard against misconfiguration.
   const apigw = process.env.TRENDYOL_BASE_URL?.trim();
-  if (apigw) return stripTrailingSlashes(apigw);
+  if (apigw) {
+    try {
+      const u = new URL(apigw);
+      const host = u.hostname.toLowerCase();
+      const isTrendyolHost = host.endsWith("trendyol.com") || host.endsWith("tgoapis.com");
+      const isApigwHost = host === "apigw.trendyol.com" || host === "stageapigw.trendyol.com";
+      if (isTrendyolHost && !isApigwHost) {
+        return stripTrailingSlashes(envToIntegrationBaseUrl(env));
+      }
+      return stripTrailingSlashes(apigw);
+    } catch {
+      // ignore malformed TRENDYOL_BASE_URL
+    }
+  }
 
   // Fallback to apigw mapping (NOT sapigw)
   return stripTrailingSlashes(envToIntegrationBaseUrl(env));
@@ -165,6 +264,25 @@ function snippet(data: unknown, max = 800): string {
 
         const errorsSample = d.errors.slice(0, 3).map(pickError);
         const s = JSON.stringify({ keys, errorsCount: d.errors.length, errorsSample });
+        return s.length > max ? s.slice(0, max) + "…" : s;
+      }
+
+      // Some Trendyol endpoints return business errors as a single { message: "..." } object.
+      // Our old behaviour returned only keys (e.g. {"keys":["message"]}), which is useless.
+      // Surface the message text safely (still truncated) so Sprint 11.1 can be debugged deterministically.
+      const msg =
+        (typeof d.message === "string" && d.message.trim())
+          ? d.message
+          : (typeof d.errorMessage === "string" && d.errorMessage.trim())
+            ? d.errorMessage
+            : (typeof d.error_description === "string" && d.error_description.trim())
+              ? d.error_description
+              : (typeof d.detail === "string" && d.detail.trim())
+                ? d.detail
+                : null;
+
+      if (msg) {
+        const s = JSON.stringify({ message: msg });
         return s.length > max ? s.slice(0, max) + "…" : s;
       }
 
@@ -261,12 +379,14 @@ export async function trendyolFetch<T = any>(
   if (res.status >= 200 && res.status < 300) return res.data as T;
 
   // Provide payload snippet for debugging (truncated to keep logs readable)
-  throw new Error(`Trendyol webhook ${method} ${url} failed (${res.status}) :: ${snippet(res.data)}`);
+  // IMPORTANT: this helper is used by multiple sprints (webhook + seller ops + others).
+  // Keep the message generic.
+  throw new Error(`Trendyol ${method} ${url} failed (${res.status}) :: ${snippet(res.data)}`);
 }
 
 
 export type OrdersQuery = {
-  status?: string;
+  status?: string | null;
   page?: number;
   size?: number;
   startDate?: number;
@@ -277,7 +397,15 @@ export type OrdersQuery = {
 
 export async function trendyolGetOrders(cfg: TrendyolConfig, q: OrdersQuery) {
 
-  const status = q.status ?? "Created";
+  // NOTE:
+  // - Backward compatible behaviour: if q.status is undefined -> default to "Created" (old behaviour)
+  // - If q.status is null/empty string -> omit the status param (some seller accounts may require this)
+  const statusParam = (() => {
+    if (q.status === undefined) return "Created";
+    const s = String(q.status ?? "").trim();
+    return s.length ? s : undefined;
+  })();
+
   const page = q.page ?? 0;
   const size = q.size ?? 50;
 
@@ -287,32 +415,368 @@ export async function trendyolGetOrders(cfg: TrendyolConfig, q: OrdersQuery) {
   const orderByField = q.orderByField ?? "PackageLastModifiedDate";
   const orderByDirection = q.orderByDirection ?? "DESC";
 
-  const base = resolveIntegrationBaseUrl(cfg);
+  // Trendyol.pdf: recommended order list is under apigw.trendyol.com
+  // e.g. /integration/order/sellers/{sellerId}/orders
+  // Some accounts may still accept /suppliers/...; we do a safe fallback for robustness.
+  const base = resolveApigwBaseUrl(cfg);
 
-  // Trendyol dokümantasyonundaki önerilen sipariş listeleme endpoint'i
-  // (“getShipmentPackages” örnekleri /orders üzerinden veriliyor.)
-  const url = `${base}/integration/order/sellers/${cfg.sellerId}/orders`;
+  const sellerUrl = `${base}/integration/order/sellers/${cfg.sellerId}/orders`;
+  const supplierUrl = `${base}/integration/order/suppliers/${cfg.sellerId}/orders`;
 
   const params: Record<string, any> = {
-    status,
     page,
     size,
     orderByField,
     orderByDirection,
   };
 
+  if (statusParam) params.status = statusParam;
   if (typeof startDate === "number") params.startDate = startDate;
   if (typeof endDate === "number") params.endDate = endDate;
 
-  const res = await httpGetJson<any>(url, cfg, params);
+  const resSeller = await httpGetJson<any>(sellerUrl, cfg, params);
+  if (resSeller.status >= 200 && resSeller.status < 300) return resSeller.data;
 
-  if (res.status >= 200 && res.status < 300) return res.data;
+  // Fallback: suppliers route (some older docs/examples use this)
+  const resSupplier = await httpGetJson<any>(supplierUrl, cfg, params);
+  if (resSupplier.status >= 200 && resSupplier.status < 300) return resSupplier.data;
 
-  throw new Error(`Trendyol orders failed (${res.status}) ${url} :: ${snippet(res.data)}`);
+  // Prefer seller error as primary
+  throw new Error(
+    `Trendyol orders failed (${resSeller.status}) ${sellerUrl} :: ${snippet(resSeller.data)}`,
+  );
 }
 
 // Backward-compat: eski isim halen import eden yerler için.
 export const trendyolGetShipmentPackages = trendyolGetOrders;
+
+/**
+ * Legacy listing endpoint: /shipment-packages
+ *
+ * Bazı hesaplarda /orders listesi boş/uyumsuz dönebilirken /shipment-packages çalışabiliyor.
+ * Bu fonksiyon Sprint 11.1 “candidate discovery” için kullanılır.
+ */
+export async function trendyolGetShipmentPackagesLegacy(cfg: TrendyolConfig, q: OrdersQuery) {
+  const base = resolveApigwBaseUrl(cfg);
+  const page = q.page ?? 0;
+  const size = q.size ?? 50;
+
+  const params: Record<string, any> = { page, size };
+  if (q.status != null && String(q.status).trim().length) params.status = String(q.status).trim();
+  if (typeof q.startDate === 'number') params.startDate = q.startDate;
+  if (typeof q.endDate === 'number') params.endDate = q.endDate;
+  if (q.orderByField) params.orderByField = q.orderByField;
+  if (q.orderByDirection) params.orderByDirection = q.orderByDirection;
+
+  const sellerUrl = `${base}/integration/order/sellers/${cfg.sellerId}/shipment-packages`;
+  const supplierUrl = `${base}/integration/order/suppliers/${cfg.sellerId}/shipment-packages`;
+
+  const resSeller = await httpGetJson<any>(sellerUrl, cfg, params);
+  if (resSeller.status >= 200 && resSeller.status < 300) return resSeller.data;
+
+  const resSupplier = await httpGetJson<any>(supplierUrl, cfg, params);
+  if (resSupplier.status >= 200 && resSupplier.status < 300) return resSupplier.data;
+
+  throw new Error(
+    `Trendyol shipment-packages failed (${resSeller.status}) ${sellerUrl} :: ${snippet(resSeller.data)}`,
+  );
+}
+
+
+
+
+// -----------------------------
+// Sprint 12 — Claims / Iade (returns)
+// -----------------------------
+
+export type ClaimsQuery = {
+  claimIds?: Array<string | number> | string;
+  claimItemStatus?: string;
+  startDate?: number;
+  endDate?: number;
+  orderNumber?: string;
+  page?: number;
+  size?: number;
+};
+
+export async function trendyolGetClaims(cfg: TrendyolConfig, q: ClaimsQuery = {}) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/order/sellers/${c.sellerId}/claims`;
+
+  const params: Record<string, any> = {
+    page: q.page ?? 0,
+    size: q.size ?? 50,
+  };
+
+  if (q.claimIds != null) {
+    if (Array.isArray(q.claimIds)) params.claimIds = q.claimIds.map(String).join(',');
+    else {
+      const v = String(q.claimIds).trim();
+      if (v) params.claimIds = v;
+    }
+  }
+
+  if (q.claimItemStatus != null && String(q.claimItemStatus).trim().length) {
+    params.claimItemStatus = String(q.claimItemStatus).trim();
+  }
+
+  if (typeof q.startDate === 'number') params.startDate = q.startDate;
+  if (typeof q.endDate === 'number') params.endDate = q.endDate;
+
+  if (q.orderNumber != null && String(q.orderNumber).trim().length) {
+    params.orderNumber = String(q.orderNumber).trim();
+  }
+
+  return trendyolFetch<any>(c, url, { params });
+}
+
+export type ApproveClaimLineItemsInput = {
+  claimId: string | number;
+  claimLineItemIdList: Array<string | number>;
+  params?: Record<string, any>;
+};
+
+export async function trendyolApproveClaimLineItems(cfg: TrendyolConfig, input: ApproveClaimLineItemsInput) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const claimId = encodeURIComponent(String(input.claimId ?? '').trim());
+  const url = `${base}/integration/order/sellers/${c.sellerId}/claims/${claimId}/items/approve`;
+
+  const list = (input.claimLineItemIdList ?? []).map((x) => {
+    const s = String(x).trim();
+    return s;
+  }).filter(Boolean);
+
+  if (!list.length) throw new Error('approveClaimLineItems: claimLineItemIdList is empty');
+
+  const body = { claimLineItemIdList: list, params: input.params ?? {} };
+  return trendyolFetch<any>(c, url, { method: 'PUT', body });
+}
+
+export async function trendyolGetClaimsIssueReasons(cfg: TrendyolConfig) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/order/claim-issue-reasons`;
+  return trendyolFetch<any>(c, url);
+}
+
+export async function trendyolGetClaimAudits(cfg: TrendyolConfig, claimItemId: string | number) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const id = encodeURIComponent(String(claimItemId ?? '').trim());
+  const url = `${base}/integration/order/sellers/${c.sellerId}/claims/items/${id}/audit`;
+  return trendyolFetch<any>(c, url);
+}
+
+export type CreateClaimIssueInput = {
+  claimId: string | number;
+  claimIssueReasonId: number | string;
+  claimItemIdList: Array<string | number>;
+  description: string;
+  file?: { buffer: Buffer; filename: string; contentType: string } | null;
+};
+
+/**
+ * Sprint 12: Reject flow.
+ *
+ * Trendyol.pdf rules:
+ * - description max 500 chars
+ * - some reasons require file (handled at worker/UI layer), connector supports multipart when file is provided
+ */
+export async function trendyolCreateClaimIssue(cfg: TrendyolConfig, input: CreateClaimIssueInput) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const claimId = encodeURIComponent(String(input.claimId ?? '').trim());
+  const url = `${base}/integration/order/sellers/${c.sellerId}/claims/${claimId}/issue`;
+
+  const desc = String(input.description ?? '').trim();
+  if (desc.length > 500) {
+    throw new Error(`createClaimIssue: description must be <= 500 chars (got ${desc.length})`);
+  }
+
+  const itemList = (input.claimItemIdList ?? []).map((x) => String(x).trim()).filter(Boolean);
+  if (!itemList.length) throw new Error('createClaimIssue: claimItemIdList is empty');
+
+  const params = {
+    claimIssueReasonId: input.claimIssueReasonId,
+    claimItemIdList: itemList.join(','),
+    description: desc,
+  } as Record<string, any>;
+
+  // No file => simple POST with query params
+  if (!input.file) {
+    return trendyolFetch<any>(c, url, { method: 'POST', params });
+  }
+
+  // With file => multipart/form-data body, query params still carried in URL
+  const boundary = multipartBoundary();
+  const crlf = "\r\n";
+  const parts: Buffer[] = [];
+
+  const filename = String(input.file?.filename ?? 'file');
+  const contentType = String(input.file?.contentType ?? 'application/octet-stream');
+  const fileBuf = Buffer.isBuffer(input.file?.buffer) ? input.file.buffer : Buffer.from([]);
+
+  parts.push(
+    Buffer.from(
+      `--${boundary}${crlf}` +
+        `Content-Disposition: form-data; name="file"; filename="${filename}"${crlf}` +
+        `Content-Type: ${contentType}${crlf}${crlf}`,
+      'utf8',
+    ),
+  );
+  parts.push(fileBuf);
+  parts.push(Buffer.from(crlf, 'utf8'));
+  parts.push(Buffer.from(`--${boundary}--${crlf}`, 'utf8'));
+
+  const body = Buffer.concat(parts);
+
+  const headers = {
+    ...buildHeaders(c),
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    'Content-Length': String(body.length),
+  } as Record<string, string>;
+
+  const res = await axios.post(url, body, {
+    headers,
+    params,
+    timeout: typeof c.timeoutMs === 'number' ? c.timeoutMs : undefined,
+    validateStatus: () => true,
+  });
+
+  if (res.status >= 200 && res.status < 300) return res.data;
+
+  throw new Error(`Trendyol POST ${url} failed (${res.status}) :: ${snippet(res.data)}`);
+}
+
+/**
+ * Sprint 12 optional: Create claim (only for Approved return requests per Trendyol.pdf)
+ */
+export async function trendyolCreateClaim(cfg: TrendyolConfig, payload: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/order/sellers/${c.sellerId}/claims/create`;
+  return trendyolFetch<any>(c, url, { method: 'POST', body: payload });
+}
+// -----------------------------
+// Sprint 11 — Seller ops (addresses / label / invoice)
+// -----------------------------
+
+export async function trendyolGetSuppliersAddresses(cfg: TrendyolConfig) {
+  const c = normalizeConfig(cfg);
+  // Trendyol.pdf: seller ops are documented under apigw.trendyol.com
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/sellers/${c.sellerId}/addresses`;
+  return trendyolFetch(c, url);
+}
+
+export async function trendyolCreateCommonLabel(cfg: TrendyolConfig, cargoTrackingNumber: string, payload: any) {
+  // Trendyol.pdf: createCommonLabel is documented under apigw.trendyol.com
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const ct = encodeURIComponent(String(cargoTrackingNumber ?? '').trim());
+  const url = `${base}/integration/sellers/${c.sellerId}/commonlabel/${ct}`;
+  return trendyolFetch(c, url, { method: 'POST', body: payload });
+}
+
+
+export async function trendyolGetCommonLabel(cfg: TrendyolConfig, cargoTrackingNumber: string) {
+  // Trendyol.pdf: getCommonLabel is documented under apigw.trendyol.com
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const ct = encodeURIComponent(String(cargoTrackingNumber ?? '').trim());
+  const url = `${base}/integration/sellers/${c.sellerId}/commonlabel/${ct}`;
+  return trendyolFetch(c, url);
+}
+
+
+export async function trendyolSendInvoiceLink(cfg: TrendyolConfig, body: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/sellers/${c.sellerId}/seller-invoice-links`;
+  return trendyolFetch(c, url, { method: 'POST', body });
+}
+
+export async function trendyolDeleteInvoiceLink(cfg: TrendyolConfig, body: any) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/sellers/${c.sellerId}/seller-invoice-links/delete`;
+  return trendyolFetch(c, url, { method: 'POST', body });
+}
+
+export type SellerInvoiceUploadInput = {
+  shipmentPackageId: number;
+  invoiceDateTime?: number;
+  invoiceNumber?: string;
+  file: { buffer: Buffer; filename: string; contentType: string };
+};
+
+function multipartBoundary() {
+  return `----eci${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
+export async function trendyolUploadSellerInvoiceFile(cfg: TrendyolConfig, input: SellerInvoiceUploadInput) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+  const url = `${base}/integration/sellers/${c.sellerId}/seller-invoice-file`;
+
+  const boundary = multipartBoundary();
+  const crlf = "\r\n";
+
+  const parts: Buffer[] = [];
+  const addField = (name: string, value: string) => {
+    parts.push(
+      Buffer.from(
+        `--${boundary}${crlf}` +
+          `Content-Disposition: form-data; name="${name}"${crlf}${crlf}` +
+          `${value}${crlf}`,
+        'utf8',
+      ),
+    );
+  };
+
+  addField('shipmentPackageId', String(input.shipmentPackageId));
+  if (input.invoiceDateTime != null) addField('invoiceDateTime', String(input.invoiceDateTime));
+  if (input.invoiceNumber != null) addField('invoiceNumber', String(input.invoiceNumber));
+
+  const filename = String(input.file?.filename ?? 'invoice.pdf');
+  const contentType = String(input.file?.contentType ?? 'application/octet-stream');
+  const fileBuf = Buffer.isBuffer(input.file?.buffer) ? input.file.buffer : Buffer.from([]);
+
+  parts.push(
+    Buffer.from(
+      `--${boundary}${crlf}` +
+        `Content-Disposition: form-data; name="file"; filename="${filename}"${crlf}` +
+        `Content-Type: ${contentType}${crlf}${crlf}`,
+      'utf8',
+    ),
+  );
+  parts.push(fileBuf);
+  parts.push(Buffer.from(crlf, 'utf8'));
+
+  parts.push(Buffer.from(`--${boundary}--${crlf}`, 'utf8'));
+
+  const body = Buffer.concat(parts);
+
+  const headers = {
+    ...buildHeaders(c),
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    'Content-Length': String(body.length),
+  } as Record<string, string>;
+
+  const res = await axios.post(url, body, {
+    headers,
+    timeout: typeof c.timeoutMs === 'number' ? c.timeoutMs : undefined,
+    validateStatus: () => true,
+  });
+
+  if (res.status >= 200 && res.status < 300) {
+    return { status: res.status, data: res.data, url };
+  }
+
+  throw new Error(`Trendyol seller-invoice-file failed (${res.status}) ${url} :: ${snippet(res.data)}`);
+}
 
 /**
  * Teşhis: Connection test / smoke test için “tek doğru kapı”dan probe.
@@ -323,7 +787,8 @@ export async function trendyolProbeShipmentPackages(cfg: TrendyolConfig) {
 
   // Connection test / smoke test için: çalışan kapıdan (orders) probe yapıyoruz.
   // /shipment-packages kök endpoint’i bazı hesaplarda 401/403 dönebiliyor; o yüzden sadece debug modda deneriz.
-  const base = resolveIntegrationBaseUrl(cfg);
+  // Trendyol.pdf: recommended seller order endpoints are under apigw.trendyol.com
+  const base = resolveApigwBaseUrl(cfg);
 
   const recommendedUrl =
     `${base}/integration/order/sellers/${cfg.sellerId}` +

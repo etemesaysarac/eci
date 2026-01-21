@@ -66,7 +66,7 @@ process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e)
 process.on("uncaughtException", (e) => console.error("[uncaughtException]", e));
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: process.env.ECI_BODY_LIMIT || "25mb" }));
 
 app.get("/", (_req, res) => res.status(200).send("ECI Core OK"));
 app.get("/health", (_req, res) => res.status(200).send("OK"));

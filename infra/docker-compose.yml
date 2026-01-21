@@ -1,6 +1,7 @@
-﻿services:
+services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: eci
       POSTGRES_PASSWORD: eci_dev_password
@@ -12,6 +13,7 @@
 
   redis:
     image: redis:7
+    restart: unless-stopped
     ports:
       - "6379:6379"
 

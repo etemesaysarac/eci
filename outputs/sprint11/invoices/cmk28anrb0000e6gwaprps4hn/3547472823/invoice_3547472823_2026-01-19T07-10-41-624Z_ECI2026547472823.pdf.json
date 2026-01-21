@@ -1,0 +1,11 @@
+{
+  "savedAt": "2026-01-19T07:10:41.624Z",
+  "connectionId": "cmk28anrb0000e6gwaprps4hn",
+  "shipmentPackageId": 3547472823,
+  "invoiceDateTime": 1768806641,
+  "invoiceNumber": "ECI2026547472823",
+  "contentType": "application/pdf",
+  "bytes": 990,
+  "sha256": "d9d12cbaa9e75b043a18194c97d1dd7a2259d495b321d8a68274703d586911e6",
+  "file": "outputs/sprint11/invoices/cmk28anrb0000e6gwaprps4hn/3547472823/invoice_3547472823_2026-01-19T07-10-41-624Z_ECI2026547472823.pdf"
+}

@@ -3,6 +3,8 @@ import { registerSprint7ActionRoutes } from "./server.sprint7";
 import { registerSprint8WebhookRoutes } from "./server.sprint8";
 import { registerSprint9ProductRoutes } from "./server.sprint9";
 import { registerSprint10InventoryRoutes } from "./server.sprint10";
+import { registerSprint11InvoiceLabelRoutes } from "./server.sprint11";
+import { registerSprint12ClaimRoutes } from "./server.sprint12";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -19,6 +21,14 @@ process.on("uncaughtException", (e: unknown) => console.error("[uncaughtExceptio
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 60 * 60 * 1000);
 const redis = new IORedis(REDIS_URL, { maxRetriesPerRequest: null });
+redis.on("error", (e: any) => {
+  // Prevent EventEmitter 'error' from crashing the process when Redis is temporarily unavailable.
+  const msg = e?.message ?? String(e);
+  console.error("[redis:error]", msg);
+});
+redis.on("connect", () => console.log("[redis] connect"));
+redis.on("ready", () => console.log("[redis] ready"));
+
 
 function syncLockKey(connectionId: string) {
   return `eci:sync:lock:${connectionId}`;
@@ -28,6 +38,7 @@ const app = express();
 // Keep raw body for webhook verification (Sprint 8)
 app.use(
   express.json({
+    limit: process.env.ECI_BODY_LIMIT ?? "25mb",
     verify: (req, _res, buf) => {
       (req as any).rawBody = buf;
     },
@@ -37,6 +48,8 @@ registerSprint7ActionRoutes(app);
 registerSprint8WebhookRoutes(app);
 registerSprint9ProductRoutes(app);
 registerSprint10InventoryRoutes(app);
+registerSprint11InvoiceLabelRoutes(app);
+registerSprint12ClaimRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.

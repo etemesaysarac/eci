@@ -55,7 +55,17 @@ function buildUrl(cfg: TrendyolConfig, template: string, payload?: any) {
   if (payload && payload.shipmentPackageId != null) {
     path = path.replace("{shipmentPackageId}", encodeURIComponent(String(payload.shipmentPackageId)));
   }
-  return `${cfg.baseUrl.replace(/\/$/, "")}/${path}`;
+
+  // NOTE:
+  // - Our axios-based Trendyol client has robust baseUrl resolution (env/prod/stage fallbacks).
+  // - These action callers are used by Sprint 7+/11+ order flows and must NOT crash if baseUrl is omitted in DB config.
+  // - When baseUrl is missing, we default to apigw (prod/stage) which matches Trendyol.pdf examples.
+  const env = (cfg as any).env === "stage" ? "stage" : "prod";
+  const baseUrlRaw = (cfg.baseUrl != null ? String(cfg.baseUrl).trim() : "") ||
+    (env === "stage" ? "https://stageapigw.trendyol.com" : "https://apigw.trendyol.com");
+  const baseUrl = baseUrlRaw.replace(/\/+$/, "");
+
+  return `${baseUrl}/${path}`;
 }
 
 async function doFetch(method: "POST" | "PUT", url: string, cfg: TrendyolConfig, body: any, extraHeaders?: Record<string, string>) {

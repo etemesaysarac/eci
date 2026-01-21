@@ -8,10 +8,16 @@
   "scripts": {
     "eci:api": "tsx src/eci/server.ts",
     "eci:worker": "tsx src/eci/worker.ts",
+
+    "eci:boot": "cd ../../infra && docker compose up -d && docker ps",
+    "eci:db": "npm run prisma:deploy && npm run prisma:generate",
+
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:dev": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
+
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

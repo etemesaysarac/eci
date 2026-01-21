@@ -96,6 +96,11 @@ API: “etiket indir”, “fatura linki bas”, “invoice file sakla”
 
 Panelin “kargo etiketi yazdır” butonu artık anlamlı hale gelir.
 
+
+
+
+
+
 Sprint 12 — Claims / İade
 
 Amaç: iade gelince panelde görün, aksiyon al.

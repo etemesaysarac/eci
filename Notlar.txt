@@ -1,0 +1,38 @@
+Her bilgisayar açılışında (tek komut)
+cd C:\dev\eci\services\core
+npm run eci:boot
+npm run eci:db
+
+Infra’yı ayağa kaldır (restart sonrası rutin)
+cd C:\dev\eci\infra
+docker compose up -d
+docker ps
+
+
+GİTHUB GÜNCELLEME
+
+cd C:\dev\eci
+git status
+git add .
+git commit -m "Files_v10.01"
+git push
+
+
+
+----
+
+cd C:\dev\eci
+git status
+git remote -v
+git branch --show-current
+git branch
+
+
+git checkout --orphan clean-history
+
+
+git rm -r --cached .
+git add -A
+git commit -m "Files_v10.01"
+git branch -M main
+git push -u origin main --force

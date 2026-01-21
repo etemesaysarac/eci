@@ -1,0 +1,1 @@
+{"error":"upstream_error","upstreamStatus":556,"message":"Trendyol GET https://apigw.trendyol.com/integration/sellers/142312/commonlabel/7340029740730347 failed (556) :: {\"message\":\"Service Unavailable\"}","cargoTrackingNumber":"7340029740730347","connectionId":"cmk28anrb0000e6gwaprps4hn"}

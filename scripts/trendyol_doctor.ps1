@@ -1,4 +1,3 @@
-\
 param(
   [Parameter(Mandatory=$false)]
   [string]$EnvPath = "C:\dev\eci\services\core\.env",

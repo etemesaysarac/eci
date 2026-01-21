@@ -1,0 +1,150 @@
+﻿{
+    "ok":  true,
+    "connection":  {
+                       "id":  "cmk28anrb0000e6gwaprps4hn",
+                       "name":  "Trendyol PROD",
+                       "status":  "active",
+                       "config":  {
+                                      "sellerId":  "142312",
+                                      "env":  "prod",
+                                      "apiKey":  "***",
+                                      "apiSecret":  "***",
+                                      "preferSapigw":  true,
+                                      "agentName":  "SoXYZ",
+                                      "integrationName":  "ECI"
+                                  }
+                   },
+    "criteria":  {
+                     "statusesTried":  [
+                                           "Picking",
+                                           "Invoiced",
+                                           "Shipped",
+                                           "Created",
+                                           "AtCollectionPoint",
+                                           "Awaiting",
+                                           "Delivered",
+                                           "Cancelled",
+                                           "UnDelivered",
+                                           "Returned",
+                                           "Repack",
+                                           "UnSupplied"
+                                       ],
+                     "size":  10,
+                     "page":  0,
+                     "note":  "If no sample is found, check attempts[] for which statuses were empty."
+                 },
+    "attempts":  [
+                     {
+                         "status":  "Picking",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Invoiced",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Shipped",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Created",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "AtCollectionPoint",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Awaiting",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Delivered",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Cancelled",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "UnDelivered",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Returned",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "Repack",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     },
+                     {
+                         "status":  "UnSupplied",
+                         "totalElements":  0,
+                         "totalPages":  0,
+                         "page":  0,
+                         "size":  0,
+                         "contentCount":  0,
+                         "sample":  null
+                     }
+                 ],
+    "forLabel":  null,
+    "forInvoice":  null,
+    "sample":  null,
+    "note":  "PDF: commonlabel (etiket) akisi picking/invoiced gibi statuslerden sonra anlamli olur. Bu endpoint sadece ID kesfi + kanit icindir."
+}
