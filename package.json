@@ -18,6 +18,7 @@
     "eci:db": "npm -w @eci/core run prisma:deploy",
     "eci:proof10": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/ps1/generate_sprint10_proof.ps1",
     "eci:proof11": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/ps1/generate_sprint11_proof.ps1",
+    "eci:proof12": "powershell -ExecutionPolicy Bypass -File scripts/ps1/generate_sprint12_proof.ps1",
     "eci:closeout11_1": "powershell -ExecutionPolicy Bypass -File scripts/ps1/sprint11_1_closeout.ps1",
     "eci:stop": "powershell -ExecutionPolicy Bypass -File scripts/ps1/eci_stop.ps1"
   },

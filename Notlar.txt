@@ -14,7 +14,7 @@ GİTHUB GÜNCELLEME
 cd C:\dev\eci
 git status
 git add .
-git commit -m "Files_v10.01"
+git commit -m "Files_v12"
 git push
 
 
@@ -33,6 +33,6 @@ git checkout --orphan clean-history
 
 git rm -r --cached .
 git add -A
-git commit -m "Files_v10.01"
+git commit -m "Files_v11"
 git branch -M main
 git push -u origin main --force

@@ -463,7 +463,35 @@ app.post(
     })
   );
 
+  
   /**
+   * DEV helper: DB counts (used by proof script, avoids docker/psql quoting issues)
+   * GET /v1/claims/dev/counts?connectionId=...
+   */
+  app.get(
+    "/v1/claims/dev/counts",
+    asyncHandler(async (req: Request, res: Response) => {
+      const connectionId = requireConnectionId(req, res);
+      if (!connectionId) return;
+
+      const [claimCount, claimItemCount, claimAuditCount, claimCommandCount] = await Promise.all([
+        prisma.claim.count({ where: { connectionId, marketplace: "trendyol" } }),
+        prisma.claimItem.count({ where: { connectionId, marketplace: "trendyol" } }),
+        prisma.claimAudit.count({ where: { connectionId, marketplace: "trendyol" } }),
+        prisma.claimCommand.count({ where: { connectionId, marketplace: "trendyol" } }),
+      ]);
+
+      return res.json({
+        connectionId,
+        claimCount,
+        claimItemCount,
+        claimAuditCount,
+        claimCommandCount,
+      });
+    })
+  );
+
+/**
    * Read claim items (panel)
    * GET /v1/claims/items?connectionId=...&claimId=...&itemStatus=...&page=0&pageSize=50
    */
@@ -516,34 +544,74 @@ app.post(
       const claimId = String(req.params.claimId ?? "");
       const connectionId = requireConnectionId(req, res);
       if (!connectionId) return;
-
-      const row = await prisma.claim.findFirst({
-        where: { connectionId, marketplace: "trendyol", claimId },
-        select: {
-          id: true,
-          claimId: true,
-          status: true,
-          orderNumber: true,
-          claimDate: true,
-          lastModifiedAt: true,
-          raw: true,
-          items: {
-            orderBy: [{ updatedAt: "desc" }],
-            select: {
-              id: true,
-              claimItemId: true,
-              claimId: true,
-              barcode: true,
-              sku: true,
-              quantity: true,
-              itemStatus: true,
-              reasonCode: true,
-              reasonName: true,
-              updatedAt: true,
-            },
+      if (claimId === "issue-reasons") {
+        try {
+          const cfg = await loadTrendyolConfig(req);
+          const reasons = await trendyolGetClaimsIssueReasons(cfg);
+          return res.json({ source: "trendyol", reasons });
+        } catch (e: any) {
+          // DEV fallback: static list for local UI wiring
+          return res.json({
+            source: "mock",
+            reasons: [
+              { id: 1651, name: "1651 (Mock) - file not required" },
+              { id: 451, name: "451 (Mock) - file not required" },
+              { id: 2101, name: "2101 (Mock) - file not required" },
+            ],
+            note: "Trendyol call failed; returned a minimal mock dictionary for local development.",
+            error: String(e?.message ?? e),
+          });
+        }
+      }
+      const detailSelect = {
+        id: true,
+        claimId: true,
+        status: true,
+        orderNumber: true,
+        claimDate: true,
+        lastModifiedAt: true,
+        raw: true,
+        items: {
+          orderBy: [{ updatedAt: "desc" }],
+          select: {
+            id: true,
+            claimItemId: true,
+            claimId: true,
+            barcode: true,
+            sku: true,
+            quantity: true,
+            itemStatus: true,
+            reasonCode: true,
+            reasonName: true,
+            updatedAt: true,
           },
         },
+      } as const;
+
+      let row = await prisma.claim.findFirst({
+        where: { connectionId, marketplace: "trendyol", OR: [{ claimId }, { id: claimId }] },
+        select: detailSelect,
       });
+
+      // Fallback: callers sometimes pass a claimId/claimItemId that exists only on ClaimItem rows.
+      // Derive the parent claim via claimDbId in that case.
+      if (!row) {
+        const hint = await prisma.claimItem.findFirst({
+          where: {
+            connectionId,
+            marketplace: "trendyol",
+            OR: [{ claimId }, { claimItemId: claimId }],
+          },
+          select: { claimDbId: true },
+        });
+
+        if (hint?.claimDbId) {
+          row = await prisma.claim.findFirst({
+            where: { connectionId, marketplace: "trendyol", id: hint.claimDbId },
+            select: detailSelect,
+          });
+        }
+      }
 
       if (!row) return res.status(404).json({ error: "not_found" });
       return res.json(row);
@@ -585,34 +653,6 @@ app.post(
   );
 
 
-/**
- * Issue reasons dictionary (for Reject UI)
- * GET /v1/claims/issue-reasons?connectionId=...
- */
-app.get(
-  "/v1/claims/issue-reasons",
-  asyncHandler(async (req: Request, res: Response) => {
-    if (!requireConnectionId(req, res)) return;
-
-    try {
-      const cfg = await loadTrendyolConfig(req);
-      const reasons = await trendyolGetClaimsIssueReasons(cfg);
-      return res.json({ source: "trendyol", reasons });
-    } catch (e: any) {
-      // DEV fallback: static list for local UI wiring
-      return res.json({
-        source: "mock",
-        reasons: [
-          { id: 1651, name: "1651 (Mock) — file not required" },
-          { id: 451, name: "451 (Mock) — file not required" },
-          { id: 2101, name: "2101 (Mock) — file not required" },
-        ],
-        note: "Trendyol call failed; returned a minimal mock dictionary for local development.",
-        error: String(e?.message ?? e),
-      });
-    }
-  })
-);
 
 /**
  * Approve (command)
@@ -636,7 +676,7 @@ app.post(
     if (isMockClaimId(claimId)) {
       const result = await prisma.$transaction(async (tx) => {
         const claim = await tx.claim.findFirst({
-          where: { connectionId, marketplace: "trendyol", claimId },
+          where: { connectionId, marketplace: "trendyol", OR: [{ claimId }, { id: claimId }] },
           select: { id: true, status: true },
         });
         if (!claim) return null;
@@ -686,12 +726,13 @@ app.post(
           data: {
             connectionId,
             marketplace: "trendyol",
-            type: "approve",
+            claimId,
+
+            commandType: "approve",
             status: "succeeded",
             request: { claimId, claimLineItemIdList: actionable.map((x) => x.claimItemId), dryRun: false, mock: true },
             response: { ok: true, simulated: true, movedTo: "WaitingFraudCheck", affected: actionable.length },
-            finishedAt: now,
-          },
+},
           select: { id: true },
         });
 
@@ -707,7 +748,9 @@ app.post(
       data: {
         connectionId,
         marketplace: "trendyol",
-        type: "approve",
+        claimId,
+
+        commandType: "approve",
         status: "queued",
         request: { claimId, claimLineItemIdList: requestedIds ?? null, dryRun },
       },
@@ -756,7 +799,7 @@ app.post(
     if (isMockClaimId(claimId)) {
       const result = await prisma.$transaction(async (tx) => {
         const claim = await tx.claim.findFirst({
-          where: { connectionId, marketplace: "trendyol", claimId },
+          where: { connectionId, marketplace: "trendyol", OR: [{ claimId }, { id: claimId }] },
           select: { id: true, status: true },
         });
         if (!claim) return null;
@@ -795,12 +838,13 @@ app.post(
           data: {
             connectionId,
             marketplace: "trendyol",
-            type: "rejectIssue",
+            claimId,
+
+            commandType: "rejectIssue",
             status: "succeeded",
             request: { claimId, claimLineItemIdList: actionable.map((x) => x.claimItemId), claimIssueReasonId: body.claimIssueReasonId, description: body.description, mock: true },
             response: { ok: true, simulated: true, movedTo: "IssueCreated", affected: actionable.length },
-            finishedAt: now,
-          },
+},
           select: { id: true },
         });
 
@@ -815,7 +859,9 @@ app.post(
       data: {
         connectionId,
         marketplace: "trendyol",
-        type: "rejectIssue",
+        claimId,
+
+        commandType: "rejectIssue",
         status: "queued",
         request: {
           claimId,
