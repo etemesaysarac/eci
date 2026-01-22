@@ -40,9 +40,11 @@ import {
   trendyolCreateProducts,
   trendyolUpdateProducts,
   trendyolUpdatePriceAndInventory,
+  trendyolQnaQuestionsFilter,
   type OrdersQuery,
   type ClaimsQuery,
   type ProductsListQuery,
+  type QnaQuestionsFilterQuery,
   type TrendyolConfig,
 } from "./connectors/trendyol/client";
 
@@ -720,6 +722,234 @@ async function syncClaims(connectionId: string, cfg: TrendyolConfig, params?: Jo
     requestedPages: 1,
   };
 }
+// Sprint 13: QnA — Questions sync (Trendyol -> DB)
+// Step 4.1: Wire job + fetch first page (no DB upsert yet; Step 4.2 will add DB writes)
+async function syncQnaQuestions(connectionId: string, cfg: TrendyolConfig, params?: JobData["params"]) {
+  const pageSizeRaw = params?.pageSize ?? 50;
+  const pageSize = Math.min(Math.max(Number(pageSizeRaw) || 50, 1), 50);
+
+  const statusRaw = params?.status != null ? String(params.status).trim() : "";
+  const status = statusRaw.length ? statusRaw : "WAITING_FOR_ANSWER";
+
+  // supplierId is required by Trendyol for list/filter.
+  // Source of truth order:
+  //   1) TRENDYOL_SUPPLIER_ID env (explicit override)
+  //   2) cfg.supplierId (persisted in connection config)
+  //   3) client fallback to cfg.sellerId
+  const supplierIdEnv = (process.env.TRENDYOL_SUPPLIER_ID ?? "").trim();
+  const supplierIdCfg = String((cfg as any)?.supplierId ?? "").trim();
+  const supplierId = supplierIdEnv.length ? supplierIdEnv : supplierIdCfg.length ? supplierIdCfg : undefined;
+
+  const toDateMaybe = (v: any): Date | null => {
+    const n = typeof v === "string" && v.trim().length ? Number(v) : v;
+    if (typeof n === "number" && Number.isFinite(n) && n > 0) return new Date(n);
+    return null;
+  };
+
+  const startDateRaw = params?.startDate ?? params?.windowStart ?? undefined;
+  const endDateRaw = params?.endDate ?? params?.windowEnd ?? undefined;
+  let startDate = typeof startDateRaw === "number" ? startDateRaw : undefined;
+  let endDate = typeof endDateRaw === "number" ? endDateRaw : undefined;
+
+  // Trendyol.pdf: if start/end provided, max window is 2 weeks.
+  if (typeof startDate === "number" && typeof endDate === "number" && endDate > startDate) {
+    const MAX_MS = 14 * 24 * 60 * 60 * 1000;
+    if (endDate - startDate > MAX_MS) startDate = endDate - MAX_MS;
+  } else {
+    startDate = undefined;
+    endDate = undefined;
+  }
+
+  const q: QnaQuestionsFilterQuery = {
+    supplierId,
+    status,
+    page: 0,
+    size: pageSize,
+    ...(startDate != null && endDate != null ? { startDate, endDate } : {}),
+  };
+
+  log("syncQnaQuestions started", {
+    connectionId,
+    status,
+    pageSize,
+    supplierId: supplierId ?? "(fallback)",
+    supplierIdSource: supplierIdEnv.length ? "env" : supplierIdCfg.length ? "cfg" : "fallback_sellerId",
+    ...(startDate != null && endDate != null
+      ? { startDate: new Date(startDate).toISOString(), endDate: new Date(endDate).toISOString() }
+      : {}),
+  });
+
+  const data: any = await trendyolQnaQuestionsFilter(cfg, q);
+
+  const content: any[] = Array.isArray(data?.content) ? data.content : [];
+  const totalElements = typeof data?.totalElements === "number" ? data.totalElements : content.length;
+  const totalPages = typeof data?.totalPages === "number" ? data.totalPages : undefined;
+
+  let questionsUpserted = 0;
+  let answersUpserted = 0;
+
+  // Step 4.2: Write only page-0 content (no pagination yet)
+  for (const item of content) {
+    const questionId = String(item?.id ?? item?.questionId ?? "").trim();
+    if (!questionId) continue;
+
+    const askedAt = toDateMaybe(item?.creationDate ?? item?.askedAt ?? item?.askedAtMillis);
+    const lastModifiedAt =
+      toDateMaybe(item?.lastModifiedDate ?? item?.lastModifiedAt ?? item?.updatedDate ?? item?.modifiedDate);
+
+    const row = await prisma.question.upsert({
+      where: {
+        connectionId_marketplace_questionId: { connectionId, marketplace: "trendyol", questionId },
+      },
+      create: {
+        connectionId,
+        marketplace: "trendyol",
+        questionId,
+        status: String(item?.status ?? status ?? "").trim() || null,
+        askedAt: askedAt ?? undefined,
+        lastModifiedAt: lastModifiedAt ?? undefined,
+
+        customerId: item?.customerId != null ? String(item.customerId) : item?.userId != null ? String(item.userId) : null,
+        userName: item?.userName != null ? String(item.userName) : null,
+        showUserName: typeof item?.showUserName === "boolean" ? item.showUserName : null,
+
+        productName:
+          item?.productName != null
+            ? String(item.productName)
+            : item?.product?.name != null
+              ? String(item.product.name)
+              : null,
+        productMainId:
+          item?.productMainId != null
+            ? String(item.productMainId)
+            : item?.product?.mainId != null
+              ? String(item.product.mainId)
+              : null,
+        imageUrl:
+          item?.productImageUrl != null
+            ? String(item.productImageUrl)
+            : item?.imageUrl != null
+              ? String(item.imageUrl)
+              : null,
+        webUrl:
+          item?.webUrl != null
+            ? String(item.webUrl)
+            : item?.productUrl != null
+              ? String(item.productUrl)
+              : null,
+
+        text:
+          item?.text != null
+            ? String(item.text)
+            : item?.questionText != null
+              ? String(item.questionText)
+              : null,
+
+        raw: (item ?? {}) as any,
+      },
+      update: {
+        status: String(item?.status ?? status ?? "").trim() || null,
+        askedAt: askedAt ?? undefined,
+        lastModifiedAt: lastModifiedAt ?? undefined,
+
+        customerId: item?.customerId != null ? String(item.customerId) : item?.userId != null ? String(item.userId) : null,
+        userName: item?.userName != null ? String(item.userName) : null,
+        showUserName: typeof item?.showUserName === "boolean" ? item.showUserName : null,
+
+        productName:
+          item?.productName != null
+            ? String(item.productName)
+            : item?.product?.name != null
+              ? String(item.product.name)
+              : null,
+        productMainId:
+          item?.productMainId != null
+            ? String(item.productMainId)
+            : item?.product?.mainId != null
+              ? String(item.product.mainId)
+              : null,
+        imageUrl:
+          item?.productImageUrl != null
+            ? String(item.productImageUrl)
+            : item?.imageUrl != null
+              ? String(item.imageUrl)
+              : null,
+        webUrl:
+          item?.webUrl != null
+            ? String(item.webUrl)
+            : item?.productUrl != null
+              ? String(item.productUrl)
+              : null,
+
+        text:
+          item?.text != null
+            ? String(item.text)
+            : item?.questionText != null
+              ? String(item.questionText)
+              : null,
+
+        raw: (item ?? {}) as any,
+      },
+    });
+
+    questionsUpserted += 1;
+
+    const ans = item?.answer ?? null;
+    const answerText = ans?.text != null ? String(ans.text).trim() : ans?.answerText != null ? String(ans.answerText).trim() : "";
+    if (answerText.length) {
+      const answeredAt = toDateMaybe(ans?.creationDate ?? ans?.answeredAt ?? ans?.answeredAtMillis);
+
+      await prisma.answer.upsert({
+        where: {
+          connectionId_marketplace_questionId: { connectionId, marketplace: "trendyol", questionId },
+        },
+        create: {
+          connectionId,
+          marketplace: "trendyol",
+          questionDbId: row.id,
+          questionId,
+          answerText,
+          answeredAt: answeredAt ?? undefined,
+          executorApp: ans?.executorApp != null ? String(ans.executorApp) : null,
+          executorUser: ans?.executorUser != null ? String(ans.executorUser) : null,
+          raw: (ans ?? {}) as any,
+        },
+        update: {
+          answerText,
+          answeredAt: answeredAt ?? undefined,
+          executorApp: ans?.executorApp != null ? String(ans.executorApp) : null,
+          executorUser: ans?.executorUser != null ? String(ans.executorUser) : null,
+          raw: (ans ?? {}) as any,
+        },
+      });
+
+      answersUpserted += 1;
+    }
+  }
+
+  const summary = {
+    ok: true,
+    mode: "write",
+    connectionId,
+    status,
+    page: typeof data?.page === "number" ? data.page : 0,
+    size: typeof data?.size === "number" ? data.size : pageSize,
+    totalElements,
+    totalPages,
+    fetched: content.length,
+    questionsUpserted,
+    answersUpserted,
+    firstIds: content
+      .slice(0, 3)
+      .map((x) => String(x?.id ?? x?.questionId ?? "").trim())
+      .filter(Boolean),
+  };
+
+  log("syncQnaQuestions done", summary);
+  return summary;
+}
+
+
 
 
 async function enforceClaimsWriteRateLimit(connectionId: string) {
@@ -941,6 +1171,7 @@ const SYNC_JOB_NAMES = new Set([
   "TRENDYOL_SYNC_SHIPMENT_PACKAGES", // backward-compat
   "TRENDYOL_SYNC_ORDERS_TARGETED",
   "TRENDYOL_SYNC_CLAIMS",
+  "TRENDYOL_SYNC_QNA_QUESTIONS",
   "TRENDYOL_CLAIM_APPROVE",
   "TRENDYOL_CLAIM_REJECT_ISSUE",
   "TRENDYOL_CLAIM_CREATE",
@@ -1282,6 +1513,7 @@ const KNOWN_JOBS = [
   "TRENDYOL_SYNC_PRODUCTS",
   "TRENDYOL_PUSH_PRODUCTS",
   "TRENDYOL_PUSH_PRICE_STOCK",
+  "TRENDYOL_SYNC_QNA_QUESTIONS",
 ] as const;
 
 function redactUrl(u: string) {
@@ -1455,7 +1687,18 @@ const worker = new Worker(
           break;
         }
 
-        case "TRENDYOL_SYNC_CLAIMS": {
+        
+case "TRENDYOL_SYNC_QNA_QUESTIONS": {
+  // Sprint 13 Step 4.1: Wire QnA sync job (dry-run fetch)
+  summary = await syncQnaQuestions(connectionId, cfg, params ?? undefined);
+  summary = {
+    ...summary,
+    durationMs: Date.now() - t0,
+  };
+  break;
+}
+
+case "TRENDYOL_SYNC_CLAIMS": {
           summary = await syncClaims(connectionId, cfg, params ?? undefined);
           summary = {
             ...summary,

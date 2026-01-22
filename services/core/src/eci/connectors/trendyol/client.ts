@@ -4,6 +4,11 @@ type TrendyolEnv = "prod" | "stage";
 
 export type TrendyolConfig = {
   sellerId: string;
+  /**
+   * Trendyol supplierId (bazı endpoint'lerde zorunlu parametre).
+   * Not: Bazı hesaplarda sellerId ile aynı olabilir.
+   */
+  supplierId?: string;
   env?: TrendyolEnv;
 
   // optional: override API base URL (for mocks/proxies), e.g. http://127.0.0.1:3999
@@ -659,6 +664,81 @@ export async function trendyolCreateClaim(cfg: TrendyolConfig, payload: any) {
   const url = `${base}/integration/order/sellers/${c.sellerId}/claims/create`;
   return trendyolFetch<any>(c, url, { method: 'POST', body: payload });
 }
+
+// -----------------------------
+// Sprint 13 — QnA (Questions & Answers)
+// -----------------------------
+
+export type QnaQuestionsFilterQuery = {
+  /** supplierId is required by Trendyol for list/filter. If omitted, we default to cfg.sellerId. */
+  supplierId?: string | number;
+  status?: string;
+  page?: number;
+  size?: number;
+  /** epoch millis */
+  startDate?: number;
+  /** epoch millis */
+  endDate?: number;
+};
+
+export async function trendyolQnaQuestionsFilter(cfg: TrendyolConfig, q: QnaQuestionsFilterQuery) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const url = `${base}/integration/qna/sellers/${sellerId}/questions/filter`;
+
+  const page = typeof q.page === "number" ? q.page : 0;
+  const sizeRaw = typeof q.size === "number" ? q.size : 50;
+  const size = Math.min(Math.max(sizeRaw, 1), 50);
+
+  const supplierId = String((q.supplierId ?? c.supplierId ?? c.sellerId) as any).trim();
+
+  const params: Record<string, any> = { supplierId, page, size };
+
+  const status = String(q.status ?? "").trim();
+  if (status.length) params.status = status;
+
+  // Trendyol.pdf: if start/end not provided, defaults to last 1 week.
+  // If provided, window must be <= 2 weeks. We only send them when both are present.
+  const hasStart = typeof q.startDate === "number" && Number.isFinite(q.startDate);
+  const hasEnd = typeof q.endDate === "number" && Number.isFinite(q.endDate);
+  if (hasStart && hasEnd) {
+    params.startDate = q.startDate;
+    params.endDate = q.endDate;
+  }
+
+  return trendyolFetch<any>(c, url, { params });
+}
+
+export async function trendyolQnaQuestionById(cfg: TrendyolConfig, questionId: string | number) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const id = encodeURIComponent(String(questionId));
+  const url = `${base}/integration/qna/sellers/${sellerId}/questions/${id}`;
+
+  return trendyolFetch<any>(c, url);
+}
+
+export async function trendyolQnaCreateAnswer(
+  cfg: TrendyolConfig,
+  questionId: string | number,
+  text: string,
+) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const id = encodeURIComponent(String(questionId));
+  const url = `${base}/integration/qna/sellers/${sellerId}/questions/${id}/answers`;
+
+  const body = { text };
+  return trendyolFetch<any>(c, url, { method: "POST", body });
+}
+
+
 // -----------------------------
 // Sprint 11 — Seller ops (addresses / label / invoice)
 // -----------------------------
@@ -926,8 +1006,9 @@ export async function trendyolUpdatePriceAndInventory(cfg: TrendyolConfig, paylo
 }
 
 
-function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
+export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
   const sellerId = String(cfg.sellerId ?? "").trim();
+  const supplierId = cfg.supplierId != null ? String(cfg.supplierId).trim() : undefined;
   const tokenRaw = cfg.token != null ? String(cfg.token).trim() : undefined;
   const apiKey = cfg.apiKey != null ? String(cfg.apiKey).trim() : undefined;
   const apiSecret = cfg.apiSecret != null ? String(cfg.apiSecret).trim() : undefined;
@@ -946,6 +1027,7 @@ function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
 
   return {
     sellerId,
+    supplierId: supplierId || undefined,
     env,
     baseUrl: baseUrl || undefined,
     timeoutMs,

@@ -3,6 +3,10 @@ cd C:\dev\eci\services\core
 npm run eci:boot
 npm run eci:db
 
+cd C:\dev\eci\services\core
+npm run eci:api
+npm run eci:worker
+
 Infra’yı ayağa kaldır (restart sonrası rutin)
 cd C:\dev\eci\infra
 docker compose up -d
@@ -10,16 +14,6 @@ docker ps
 
 
 GİTHUB GÜNCELLEME
-
-cd C:\dev\eci
-git status
-git add .
-git commit -m "Files_v12"
-git push
-
-
-
-----
 
 cd C:\dev\eci
 git status
@@ -33,6 +27,6 @@ git checkout --orphan clean-history
 
 git rm -r --cached .
 git add -A
-git commit -m "Files_v11"
+git commit -m "Files_v12"
 git branch -M main
 git push -u origin main --force

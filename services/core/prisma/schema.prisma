@@ -40,6 +40,11 @@ model Connection {
   claimItems            ClaimItem[]
   claimAudits           ClaimAudit[]
   claimCommands         ClaimCommand[]
+
+  // Sprint 13: QnA
+  questions             Question[]
+  answers               Answer[]
+  qnaCommands           QnaCommand[]
 }
 
 model Job {
@@ -389,6 +394,107 @@ model ClaimCommand {
 
   @@index([connectionId])
   @@index([claimId])
+  @@index([commandType])
+  @@index([status])
+}
+
+
+// Sprint 13: QnA (Questions / Answers)
+model Question {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  // Trendyol question id (remote)
+  questionId    String
+
+  status        String?
+  askedAt       DateTime?
+  lastModifiedAt DateTime?
+
+  // Display fields (best-effort, depends on marketplace payload)
+  customerId    String?
+  userName      String?
+  showUserName  Boolean?
+
+  productName   String?
+  productMainId String?
+  imageUrl      String?
+  webUrl        String?
+
+  text          String?
+  raw           Json
+
+  answers       Answer[]
+  commands      QnaCommand[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, questionId], map: "Question_connectionId_marketplace_questionId_key")
+  @@index([connectionId])
+  @@index([questionId])
+  @@index([status])
+  @@index([askedAt])
+}
+
+model Answer {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  // Link to Question
+  questionDbId  String
+  question      Question   @relation(fields: [questionDbId], references: [id], onDelete: Cascade)
+
+  // Remote id (duplicated for unique & lookup)
+  questionId    String
+
+  answerText    String
+  answeredAt    DateTime?
+
+  executorApp   String?
+  executorUser  String?
+
+  raw           Json?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, questionId], map: "Answer_connectionId_marketplace_questionId_key")
+  @@index([connectionId])
+  @@index([questionDbId])
+  @@index([answeredAt])
+}
+
+// Command/audit table for idempotency + retries (POST answer)
+model QnaCommand {
+  id            String     @id @default(cuid())
+  connectionId  String
+  connection    Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+  marketplace   String     @default("trendyol")
+
+  questionDbId  String?
+  question      Question?  @relation(fields: [questionDbId], references: [id], onDelete: SetNull)
+  questionId    String?
+
+  commandType   String
+  status        String     @default("queued")
+
+  idempotencyKey String
+
+  request       Json
+  response      Json?
+  error         String?
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([connectionId, marketplace, idempotencyKey], map: "uq_qna_command_idem")
+  @@index([connectionId])
+  @@index([questionId])
   @@index([commandType])
   @@index([status])
 }

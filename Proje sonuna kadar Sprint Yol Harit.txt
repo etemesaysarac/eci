@@ -122,6 +122,13 @@ Worker job: SYNC_CLAIMS + “approve/reject” command job’ları
 (Trendyol “Nasıl entegrasyon yaparım” dokümanında iade entegrasyon akışı açıkça anlatılıyor.) 
 Trendyol Geliştiricileri
 
+
+
+
+
+
+
+
 Sprint 13 — QnA (soru/cevap)
 
 Amaç: pazar yeri sorularını panelden yönetmek.

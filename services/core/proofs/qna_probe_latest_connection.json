@@ -1,0 +1,56 @@
+{
+  "ok": true,
+  "envPath": "C:\\dev\\eci\\services\\core\\.env",
+  "connection": {
+    "id": "cmk28anrb0000e6gwaprps4hn",
+    "name": "Trendyol PROD",
+    "type": "trendyol",
+    "status": "active",
+    "updatedAt": "2026-01-21T19:10:30.102Z",
+    "createdAt": "2026-01-06T06:48:43.461Z"
+  },
+  "cfg": {
+    "sellerId": "142312",
+    "supplierId": "142312",
+    "env": "prod",
+    "baseUrl": null,
+    "preferSapigw": true,
+    "agentName": "SoXYZ",
+    "integrationName": "ECI"
+  },
+  "requested": {
+    "status": "WAITING_FOR_ANSWER",
+    "size": 10
+  },
+  "envSupplier": null,
+  "probes": {
+    "fallbackSupplier_requestedStatus": {
+      "totalElements": 0,
+      "totalPages": 0,
+      "firstQuestionIds": [],
+      "sampleDetail": null
+    },
+    "fallbackSupplier_statusSweep": {
+      "WAITING_FOR_ANSWER": {
+        "totalElements": 0,
+        "firstQuestionIds": []
+      },
+      "ANSWERED": {
+        "totalElements": 0,
+        "firstQuestionIds": []
+      },
+      "WAITING_FOR_APPROVE": {
+        "totalElements": 0,
+        "firstQuestionIds": []
+      },
+      "REPORTED": {
+        "totalElements": 0,
+        "firstQuestionIds": []
+      },
+      "REJECTED": {
+        "totalElements": 0,
+        "firstQuestionIds": []
+      }
+    }
+  }
+}

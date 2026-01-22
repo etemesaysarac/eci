@@ -1,0 +1,160 @@
+{
+  "ok": true,
+  "envPath": "C:\\dev\\eci\\services\\core\\.env",
+  "connection": {
+    "id": "cmk28anrb0000e6gwaprps4hn",
+    "name": "Trendyol PROD",
+    "type": "trendyol",
+    "status": "active",
+    "updatedAt": "2026-01-21T19:10:30.102Z",
+    "createdAt": "2026-01-06T06:48:43.461Z"
+  },
+  "current": {
+    "sellerId": "142312",
+    "supplierId": "142312",
+    "env": "prod",
+    "baseUrl": null
+  },
+  "envIds": {
+    "TRENDYOL_SELLER_ID": "142312",
+    "TRENDYOL_SUPPLIER_ID": null
+  },
+  "candidates": {
+    "baseUrlCandidates": [
+      "https://apigw.trendyol.com",
+      "https://stageapigw.trendyol.com"
+    ],
+    "sellerIdCandidates": [
+      "142312"
+    ],
+    "supplierIdCandidates": [
+      "142312"
+    ],
+    "statusesToTry": [
+      "WAITING_FOR_ANSWER",
+      "ANSWERED",
+      "WAITING_FOR_APPROVE",
+      "REJECTED",
+      "REPORTED"
+    ],
+    "requested": {
+      "status": "WAITING_FOR_ANSWER",
+      "size": 5
+    }
+  },
+  "best": {
+    "baseUrl": "https://apigw.trendyol.com",
+    "env": "prod",
+    "sellerId": "142312",
+    "supplierId": "142312",
+    "status": "WAITING_FOR_ANSWER",
+    "ok": true,
+    "totalElements": 1,
+    "firstQuestionIds": [
+      "381818389"
+    ],
+    "sampleDetail": {
+      "creationDate": 1769025298982,
+      "customerId": 34669710,
+      "id": 381818389,
+      "imageUrl": "https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg",
+      "productName": "Gökkuşağı Boyama",
+      "public": true,
+      "showUserName": true,
+      "status": "WAITING_FOR_ANSWER",
+      "text": "asdasdaa aa aa",
+      "userName": "Etem S.",
+      "webUrl": "https://www.trendyol.com/ty/ty-p-783308123",
+      "productMainId": "P165321S8624"
+    }
+  },
+  "applied": {
+    "connectionId": "cmk28anrb0000e6gwaprps4hn",
+    "before": {
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "env": "prod",
+      "baseUrl": null
+    },
+    "after": {
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "env": "prod",
+      "baseUrl": "https://apigw.trendyol.com"
+    },
+    "reason": "best_hit_totalElements>0"
+  },
+  "rows": [
+    {
+      "baseUrl": "https://apigw.trendyol.com",
+      "env": "prod",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "WAITING_FOR_ANSWER",
+      "ok": true,
+      "totalElements": 1,
+      "firstQuestionIds": [
+        "381818389"
+      ],
+      "sampleDetail": {
+        "creationDate": 1769025298982,
+        "customerId": 34669710,
+        "id": 381818389,
+        "imageUrl": "https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg",
+        "productName": "Gökkuşağı Boyama",
+        "public": true,
+        "showUserName": true,
+        "status": "WAITING_FOR_ANSWER",
+        "text": "asdasdaa aa aa",
+        "userName": "Etem S.",
+        "webUrl": "https://www.trendyol.com/ty/ty-p-783308123",
+        "productMainId": "P165321S8624"
+      }
+    },
+    {
+      "baseUrl": "https://stageapigw.trendyol.com",
+      "env": "stage",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "WAITING_FOR_ANSWER",
+      "ok": false,
+      "error": "Trendyol GET https://stageapigw.trendyol.com/integration/qna/sellers/142312/questions/filter failed (403) :: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n<link rel=\"stylesheet\" id=\"cf_styles-css\" href=\"/cdn-cgi/styles/cf.errors.css\" />\n<!--[if lt IE 9]><link rel=\"stylesheet\" id='cf_styles-ie-css' href=\"/cdn-cgi…"
+    },
+    {
+      "baseUrl": "https://stageapigw.trendyol.com",
+      "env": "stage",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "ANSWERED",
+      "ok": false,
+      "error": "Trendyol GET https://stageapigw.trendyol.com/integration/qna/sellers/142312/questions/filter failed (403) :: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n<link rel=\"stylesheet\" id=\"cf_styles-css\" href=\"/cdn-cgi/styles/cf.errors.css\" />\n<!--[if lt IE 9]><link rel=\"stylesheet\" id='cf_styles-ie-css' href=\"/cdn-cgi…"
+    },
+    {
+      "baseUrl": "https://stageapigw.trendyol.com",
+      "env": "stage",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "WAITING_FOR_APPROVE",
+      "ok": false,
+      "error": "Trendyol GET https://stageapigw.trendyol.com/integration/qna/sellers/142312/questions/filter failed (403) :: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n<link rel=\"stylesheet\" id=\"cf_styles-css\" href=\"/cdn-cgi/styles/cf.errors.css\" />\n<!--[if lt IE 9]><link rel=\"stylesheet\" id='cf_styles-ie-css' href=\"/cdn-cgi…"
+    },
+    {
+      "baseUrl": "https://stageapigw.trendyol.com",
+      "env": "stage",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "REJECTED",
+      "ok": false,
+      "error": "Trendyol GET https://stageapigw.trendyol.com/integration/qna/sellers/142312/questions/filter failed (403) :: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n<link rel=\"stylesheet\" id=\"cf_styles-css\" href=\"/cdn-cgi/styles/cf.errors.css\" />\n<!--[if lt IE 9]><link rel=\"stylesheet\" id='cf_styles-ie-css' href=\"/cdn-cgi…"
+    },
+    {
+      "baseUrl": "https://stageapigw.trendyol.com",
+      "env": "stage",
+      "sellerId": "142312",
+      "supplierId": "142312",
+      "status": "REPORTED",
+      "ok": false,
+      "error": "Trendyol GET https://stageapigw.trendyol.com/integration/qna/sellers/142312/questions/filter failed (403) :: <!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n<title>Attention Required! | Cloudflare</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n<link rel=\"stylesheet\" id=\"cf_styles-css\" href=\"/cdn-cgi/styles/cf.errors.css\" />\n<!--[if lt IE 9]><link rel=\"stylesheet\" id='cf_styles-ie-css' href=\"/cdn-cgi…"
+    }
+  ]
+}
