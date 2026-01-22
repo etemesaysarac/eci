@@ -1,0 +1,67 @@
+PS C:\dev\eci\services\core> cd services/core
+PS C:\dev\eci\services\core\services\core> pnpm tsx scripts/qna-probe-latest-connection.ts
+pnpm : The term 'pnpm' is not recognized as the name of a cmdlet, function, script file, or operable
+ program. Check the spelling of the name, or if a path was included, verify that the path is correct
+ and try again.
+At line:1 char:1
++ pnpm tsx scripts/qna-probe-latest-connection.ts
++ ~~~~
+    + CategoryInfo          : ObjectNotFound: (pnpm:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\dev\eci\services\core\services\core> cd services/core
+cd : Cannot find path 'C:\dev\eci\services\core\services\core\services\core' because it does not exi
+st.
+At line:1 char:1
++ cd services/core
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\dev\eci\serv...e\services\core:String) [Set-Locat
+   ion], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.SetLocationCommand
+
+PS C:\dev\eci\services\core\services\core> pnpm tsx scripts/enqueue-trendyol-qna-sync.ts --connectionId cmk28anrb0000e6gwaprps4hn --days 14 --status ANSWERED --pageSize 50
+pnpm : The term 'pnpm' is not recognized as the name of a cmdlet, function, script file, or operable
+ program. Check the spelling of the name, or if a path was included, verify that the path is correct
+ and try again.
+At line:1 char:1
++ pnpm tsx scripts/enqueue-trendyol-qna-sync.ts --connectionId cmk28anr ...
++ ~~~~
+    + CategoryInfo          : ObjectNotFound: (pnpm:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\dev\eci\services\core\services\core> pnpm tsx scripts/db-qna-smoke.ts --connectionId cmk28anrb0000e6gwaprps4hn
+pnpm : The term 'pnpm' is not recognized as the name of a cmdlet, function, script file, or operable
+ program. Check the spelling of the name, or if a path was included, verify that the path is correct
+ and try again.
+At line:1 char:1
++ pnpm tsx scripts/db-qna-smoke.ts --connectionId cmk28anrb0000e6gwaprp ...
++ ~~~~
+    + CategoryInfo          : ObjectNotFound: (pnpm:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\dev\eci\services\core\services\core> cd services/core
+cd : Cannot find path 'C:\dev\eci\services\core\services\core\services\core' because it does not exi
+st.
+At line:1 char:1
++ cd services/core
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (C:\dev\eci\serv...e\services\core:String) [Set-Locat
+   ion], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.SetLocationCommand
+
+PS C:\dev\eci\services\core\services\core> pnpm eci:api
+pnpm : The term 'pnpm' is not recognized as the name of a cmdlet, function, script file, or operable
+ program. Check the spelling of the name, or if a path was included, verify that the path is correct
+ and try again.
+At line:1 char:1
++ pnpm eci:api
++ ~~~~
+    + CategoryInfo          : ObjectNotFound: (pnpm:String) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+PS C:\dev\eci\services\core\services\core> # yeni terminal aç:
+PS C:\dev\eci\services\core\services\core> curl.exe "http://127.0.0.1:3001/eci/sprint13/qna/questions?connectionId=cmk28anrb0000e6gwaprps4hn&status=WAITING_FOR_ANSWER&page=0&size=20"
+{"ok":true,"page":0,"pageSize":20,"total":0,"items":[]}
+PS C:\dev\eci\services\core\services\core> curl.exe "http://127.0.0.1:3001/eci/sprint13/qna/questions?connectionId=cmk28anrb0000e6gwaprps4hn&status=ANSWERED&page=0&size=20"
+{"ok":true,"page":0,"pageSize":20,"total":5,"items":[{"id":"cmkpidt7c0003e6xkc56jjz5t","connectionId":"cmk28anrb0000e6gwaprps4hn","marketplace":"trendyol","questionId":"381943345","status":"ANSWERED","askedAt":"2026-01-22T11:46:59.550Z","lastModifiedAt":null,"customerId":"34669710","userName":"","showUserName":false,"productName":"Gökkuşağı Boyama","productMainId":"P165321S8624","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","text":"121231313131312313","raw":{"id":381943345,"text":"121231313131312313","answer":{"id":411522048,"text":"ECI Sprint 13 kapanis testi - 2026-01-22 19:40:56","creationDate":1769100055181},"public":false,"status":"ANSWERED","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","userName":"","customerId":34669710,"productName":"Gökkuşağı Boyama","creationDate":1769082419550,"showUserName":false,"productMainId":"P165321S8624","answeredDateMessage":"4 saat içinde cevaplandı."},"createdAt":"2026-01-22T13:49:48.697Z","updatedAt":"2026-01-22T16:57:44.972Z"},{"id":"cmkpidt720001e6xk6jsbva4i","connectionId":"cmk28anrb0000e6gwaprps4hn","marketplace":"trendyol","questionId":"381943324","status":"ANSWERED","askedAt":"2026-01-22T11:46:54.513Z","lastModifiedAt":null,"customerId":"34669710","userName":"","showUserName":false,"productName":"Gökkuşağı Boyama","productMainId":"P165321S8624","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","text":"sdfsdfsdfsfsdfsdfs","raw":{"id":381943324,"text":"sdfsdfsdfsfsdfsdfs","answer":{"id":411524960,"text":"ECI Sprint 13 kapanis testi - 2026-01-22 19:57:31","creationDate":1769101050531},"public":false,"status":"ANSWERED","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","userName":"","customerId":34669710,"productName":"Gökkuşağı Boyama","creationDate":1769082414513,"showUserName":false,"productMainId":"P165321S8624","answeredDateMessage":"5 saat içinde cevaplandı."},"createdAt":"2026-01-22T13:49:48.686Z","updatedAt":"2026-01-22T16:57:44.963Z"},{"id":"cmkp9mb4p0003e6ucq9oo08kx","connectionId":"cmk28anrb0000e6gwaprps4hn","marketplace":"trendyol","questionId":"381907997","status":"ANSWERED","askedAt":"2026-01-22T09:35:24.874Z","lastModifiedAt":null,"customerId":"34669710","userName":"","showUserName":false,"productName":"Gökkuşağı Boyama","productMainId":"P165321S8624","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","text":"aaaaaaaaaaaaaaaaaaaa222","raw":{"id":381907997,"text":"aaaaaaaaaaaaaaaaaaaa222","answer":{"id":411436166,"text":"Merhaba! Hemen yardimci olalim. Rica etsem detay paylasir misiniz?","creationDate":1769076917316},"public":false,"status":"ANSWERED","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","userName":"","customerId":34669710,"productName":"Gökkuşağı Boyama","creationDate":1769074524874,"showUserName":false,"productMainId":"P165321S8624","answeredDateMessage":"39 dakika içinde cevaplandı."},"createdAt":"2026-01-22T09:44:28.633Z","updatedAt":"2026-01-22T16:57:44.954Z"},{"id":"cmkp9mb4e0001e6ucy2i9fi4l","connectionId":"cmk28anrb0000e6gwaprps4hn","marketplace":"trendyol","questionId":"381907976","status":"ANSWERED","askedAt":"2026-01-22T09:35:18.535Z","lastModifiedAt":null,"customerId":"34669710","userName":"","showUserName":false,"productName":"Gökkuşağı Boyama","productMainId":"P165321S8624","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","text":"asdasdsadasdasdsadasd","raw":{"id":381907976,"text":"asdasdsadasdasdsadasd","answer":{"id":411433170,"text":"Merhaba! Hemen yardimci olalim. Rica etsem detay paylasir misiniz?","creationDate":1769076194759},"public":false,"status":"ANSWERED","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","userName":"","customerId":34669710,"productName":"Gökkuşağı Boyama","creationDate":1769074518535,"showUserName":false,"productMainId":"P165321S8624","answeredDateMessage":"27 dakika içinde cevaplandı."},"createdAt":"2026-01-22T09:44:28.622Z","updatedAt":"2026-01-22T16:57:44.945Z"},{"id":"cmkp516pz0001e6ogee6a6kyu","connectionId":"cmk28anrb0000e6gwaprps4hn","marketplace":"trendyol","questionId":"381818389","status":"ANSWERED","askedAt":"2026-01-21T19:54:58.982Z","lastModifiedAt":null,"customerId":"34669710","userName":"Etem S.","showUserName":true,"productName":"Gökkuşağı Boyama","productMainId":"P165321S8624","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","text":"asdasdaa aa aa","raw":{"id":381818389,"text":"asdasdaa aa aa","answer":{"id":411388938,"text":"Merhabalar,  Umarım sağlıklısınızdır.  Mesajınızı okuduk. Sizler için 7/24 çalışmaktayız. Size daha iyi ve hızlı yardımcı olabilmek adına sipariş numaranızla birlikte tekrar yazmanızı rica edebilir miyim? Sizden haber bekliyor olacağız. Saygılarımızla, Easyso Kurumsal Müşteri Temsilciniz, Damla","creationDate":1769064627694},"public":false,"status":"ANSWERED","webUrl":"https://www.trendyol.com/ty/ty-p-783308123","imageUrl":"https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg","userName":"Etem S.","customerId":34669710,"productName":"Gökkuşağı Boyama","creationDate":1769025298982,"showUserName":true,"productMainId":"P165321S8624","answeredDateMessage":"10 saat içinde cevaplandı."},"createdAt":"2026-01-22T07:36:04.679Z","updatedAt":"2026-01-22T16:57:44.936Z"}]}
+PS C:\dev\eci\services\core\services\core>

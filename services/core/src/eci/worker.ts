@@ -41,6 +41,8 @@ import {
   trendyolUpdateProducts,
   trendyolUpdatePriceAndInventory,
   trendyolQnaQuestionsFilter,
+  trendyolQnaQuestionById,
+  trendyolQnaCreateAnswer,
   type OrdersQuery,
   type ClaimsQuery,
   type ProductsListQuery,
@@ -952,6 +954,260 @@ async function syncQnaQuestions(connectionId: string, cfg: TrendyolConfig, param
 
 
 
+
+
+async function finishQnaCommand(commandId: string | null | undefined, data: { status: string; response?: any; error?: any }) {
+  if (!commandId) return;
+  const errMsg = data.error ? String((data.error as any)?.message ?? data.error) : null;
+  await prisma.qnaCommand
+    .update({
+      where: { id: commandId },
+      data: {
+        status: data.status as any,
+        response: data.response ?? undefined,
+        error: errMsg,
+      },
+    })
+    .catch(() => undefined);
+}
+
+async function createQnaAnswerCommand(connectionId: string, cfg: TrendyolConfig, params?: any) {
+  const qnaCommandId = params?.qnaCommandId ? String(params.qnaCommandId) : null;
+  const questionId = String(params?.questionId ?? params?.id ?? "").trim();
+  const text = String(params?.text ?? "").trim();
+  const dryRunParam = !!params?.dryRun;
+  const executorApp = params?.executorApp != null ? String(params.executorApp) : null;
+  const executorUser = params?.executorUser != null ? String(params.executorUser) : null;
+
+  if (!qnaCommandId) throw new Error("qnaCommandId required");
+  if (!questionId) throw new Error("questionId required");
+  if (!text) throw new Error("text required");
+  if (text.length < 10 || text.length > 2000) throw new Error("text length must be 10-2000");
+
+  // Idempotency guard: if command already succeeded, do nothing.
+  const cmdRow = await prisma.qnaCommand.findUnique({
+    where: { id: qnaCommandId },
+    select: { status: true, response: true },
+  });
+  if (cmdRow?.status === "succeeded") {
+    return {
+      ok: true,
+      mode: "idempotent",
+      note: "qnaCommand already succeeded",
+      qnaCommandId,
+      questionId,
+      response: cmdRow.response ?? null,
+    };
+  }
+
+  // Mark running (best-effort)
+  await prisma.qnaCommand
+    .update({ where: { id: qnaCommandId }, data: { status: "running", error: null } })
+    .catch(() => undefined);
+
+  const writeEnabledEnv = String(process.env.TRENDYOL_WRITE_ENABLED ?? "").toLowerCase() === "true";
+  const isDry = dryRunParam || !writeEnabledEnv;
+
+  const toDateMaybe = (v: any): Date | null => {
+    const n = typeof v === "string" && v.trim().length ? Number(v) : v;
+    if (typeof n === "number" && Number.isFinite(n) && n > 0) return new Date(n);
+    if (v instanceof Date) return v;
+    return null;
+  };
+
+  const upsertFromRemote = async (remote: any | null, extra?: { forceAnswerText?: string; forceAnsweredAt?: Date }) => {
+    const item = remote ?? {};
+
+    const askedAt = toDateMaybe(item?.creationDate ?? item?.askedAt ?? item?.askedAtMillis);
+    const lastModifiedAt =
+      toDateMaybe(item?.lastModifiedDate ?? item?.lastModifiedAt ?? item?.updatedDate ?? item?.modifiedDate);
+
+    const qRow = await prisma.question.upsert({
+      where: {
+        connectionId_marketplace_questionId: { connectionId, marketplace: "trendyol", questionId },
+      },
+      create: {
+        connectionId,
+        marketplace: "trendyol",
+        questionId,
+        status: item?.status != null ? String(item.status).trim() || null : null,
+        askedAt: askedAt ?? undefined,
+        lastModifiedAt: lastModifiedAt ?? undefined,
+        customerId: item?.customerId != null ? String(item.customerId) : item?.userId != null ? String(item.userId) : null,
+        userName: item?.userName != null ? String(item.userName) : null,
+        showUserName: typeof item?.showUserName === "boolean" ? item.showUserName : null,
+        productName:
+          item?.productName != null
+            ? String(item.productName)
+            : item?.product?.name != null
+              ? String(item.product.name)
+              : null,
+        productMainId:
+          item?.productMainId != null
+            ? String(item.productMainId)
+            : item?.product?.mainId != null
+              ? String(item.product.mainId)
+              : null,
+        imageUrl:
+          item?.productImageUrl != null
+            ? String(item.productImageUrl)
+            : item?.imageUrl != null
+              ? String(item.imageUrl)
+              : null,
+        webUrl:
+          item?.webUrl != null
+            ? String(item.webUrl)
+            : item?.productUrl != null
+              ? String(item.productUrl)
+              : null,
+        text:
+          item?.text != null
+            ? String(item.text)
+            : item?.questionText != null
+              ? String(item.questionText)
+              : null,
+        raw: (remote ?? { _note: "remote_detail_missing" }) as any,
+      },
+      update: {
+        status: item?.status != null ? String(item.status).trim() || null : undefined,
+        askedAt: askedAt ?? undefined,
+        lastModifiedAt: lastModifiedAt ?? undefined,
+        customerId: item?.customerId != null ? String(item.customerId) : item?.userId != null ? String(item.userId) : null,
+        userName: item?.userName != null ? String(item.userName) : null,
+        showUserName: typeof item?.showUserName === "boolean" ? item.showUserName : null,
+        productName:
+          item?.productName != null
+            ? String(item.productName)
+            : item?.product?.name != null
+              ? String(item.product.name)
+              : null,
+        productMainId:
+          item?.productMainId != null
+            ? String(item.productMainId)
+            : item?.product?.mainId != null
+              ? String(item.product.mainId)
+              : null,
+        imageUrl:
+          item?.productImageUrl != null
+            ? String(item.productImageUrl)
+            : item?.imageUrl != null
+              ? String(item.imageUrl)
+              : null,
+        webUrl:
+          item?.webUrl != null
+            ? String(item.webUrl)
+            : item?.productUrl != null
+              ? String(item.productUrl)
+              : null,
+        text:
+          item?.text != null
+            ? String(item.text)
+            : item?.questionText != null
+              ? String(item.questionText)
+              : null,
+        raw: (remote ?? { _note: "remote_detail_missing" }) as any,
+      },
+      select: { id: true },
+    });
+
+    const ans = item?.answer ?? null;
+    const answerTextRemote = ans?.text != null ? String(ans.text).trim() : ans?.answerText != null ? String(ans.answerText).trim() : "";
+    const answerText = (answerTextRemote || extra?.forceAnswerText || "").trim();
+
+    if (answerText.length) {
+      const answeredAtRemote = toDateMaybe(ans?.creationDate ?? ans?.answeredAt ?? ans?.answeredAtMillis);
+      const answeredAt = answeredAtRemote ?? extra?.forceAnsweredAt ?? new Date();
+
+      await prisma.answer.upsert({
+        where: {
+          connectionId_marketplace_questionId: { connectionId, marketplace: "trendyol", questionId },
+        },
+        create: {
+          connectionId,
+          marketplace: "trendyol",
+          questionDbId: qRow.id,
+          questionId,
+          answerText,
+          answeredAt: answeredAt ?? undefined,
+          executorApp: executorApp,
+          executorUser: executorUser,
+          raw: (ans ?? { _note: "answer_missing_in_detail" }) as any,
+        },
+        update: {
+          answerText,
+          answeredAt: answeredAt ?? undefined,
+          executorApp: executorApp,
+          executorUser: executorUser,
+          raw: (ans ?? { _note: "answer_missing_in_detail" }) as any,
+        },
+      });
+    }
+
+    return { questionDbId: qRow.id, hasAnswer: !!answerText.length, answerText };
+  };
+
+  try {
+    // Preflight: if already answered remotely, just sync + succeed.
+    let detail: any = null;
+    try {
+      detail = await trendyolQnaQuestionById(cfg, questionId);
+    } catch {
+      detail = null;
+    }
+
+    const preAns = detail?.answer ?? null;
+    const preText = preAns?.text != null ? String(preAns.text).trim() : preAns?.answerText != null ? String(preAns.answerText).trim() : "";
+
+    if (preText.length) {
+      const syncRes = await upsertFromRemote(detail);
+      const out = {
+        ok: true,
+        mode: "already_answered",
+        questionId,
+        remoteAnswerText: preText,
+        synced: syncRes,
+      };
+      await finishQnaCommand(qnaCommandId, { status: "succeeded", response: out });
+      return out;
+    }
+
+    if (isDry) {
+      const note = dryRunParam ? "dryRun=1 → remote call skipped" : "TRENDYOL_WRITE_ENABLED=false → remote call skipped";
+      const out = { ok: true, mode: "dry", dryRun: true, note, questionId };
+      await finishQnaCommand(qnaCommandId, { status: "succeeded", response: out });
+      return out;
+    }
+
+    // Real write
+    const resp = await trendyolQnaCreateAnswer(cfg, questionId, text);
+
+    // Fetch detail as proof + update DB
+    let detail2: any = null;
+    try {
+      detail2 = await trendyolQnaQuestionById(cfg, questionId);
+    } catch {
+      detail2 = null;
+    }
+
+    const synced = await upsertFromRemote(detail2, { forceAnswerText: text, forceAnsweredAt: new Date() });
+
+    const out = {
+      ok: true,
+      mode: "sent",
+      questionId,
+      response: resp,
+      detailFetched: !!detail2,
+      synced,
+    };
+
+    await finishQnaCommand(qnaCommandId, { status: "succeeded", response: out });
+    return out;
+  } catch (e: any) {
+    await finishQnaCommand(qnaCommandId, { status: "failed", error: e });
+    throw e;
+  }
+}
+
 async function enforceClaimsWriteRateLimit(connectionId: string) {
   // Trendyol limits: approve/reject/createClaim = 5 req / minute
   const key = `eci:ratelimit:trendyol:claims_write:${connectionId}`;
@@ -1514,6 +1770,7 @@ const KNOWN_JOBS = [
   "TRENDYOL_PUSH_PRODUCTS",
   "TRENDYOL_PUSH_PRICE_STOCK",
   "TRENDYOL_SYNC_QNA_QUESTIONS",
+  "TRENDYOL_QNA_CREATE_ANSWER",
 ] as const;
 
 function redactUrl(u: string) {
@@ -1569,7 +1826,9 @@ const worker = new Worker(
       maxAttempts,
     });
 
-    const isSync = isSyncJob(job.name);
+    const effectiveJobName = (job.name === "job" && (job as any).data?.type) ? (job as any).data.type : job.name;
+
+    const isSync = isSyncJob(effectiveJobName);
 
     // startedAt'i sadece ilk denemede set etmeye çalış
     await prisma.job.update({
@@ -1618,8 +1877,6 @@ const worker = new Worker(
       const cfg = normalizeConfig(decryptJson<TrendyolConfig>(conn.configEnc));
 
       let summary: any = null;
-
-      const effectiveJobName = (job.name === "job" && (job as any).data?.type) ? (job as any).data.type : job.name;
 
       switch (effectiveJobName) {
         case "TRENDYOL_SYNC_ORDERS":
@@ -1693,6 +1950,16 @@ const worker = new Worker(
 case "TRENDYOL_SYNC_QNA_QUESTIONS": {
   // Sprint 13 Step 4.1: Wire QnA sync job (dry-run fetch)
   summary = await syncQnaQuestions(connectionId, cfg, params ?? undefined);
+  summary = {
+    ...summary,
+    durationMs: Date.now() - t0,
+  };
+  break;
+}
+
+case "TRENDYOL_QNA_CREATE_ANSWER": {
+  // Sprint 13 Step 4.3+: Answer (Write path)
+  summary = await createQnaAnswerCommand(connectionId, cfg, params ?? undefined);
   summary = {
     ...summary,
     durationMs: Date.now() - t0,
@@ -1939,7 +2206,7 @@ case "TRENDYOL_CLAIM_CREATE": {
       log("job success", { name: job.name, jobId, connectionId });
       return summary;
     } catch (err: any) {
-      const retrying = shouldRetryForJob(job.name, err) && attempt < maxAttempts;
+      const retrying = shouldRetryForJob(effectiveJobName, err) && attempt < maxAttempts;
 
       if (isSync) {
         await prisma.syncState.upsert({
