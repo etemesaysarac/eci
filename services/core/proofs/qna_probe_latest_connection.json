@@ -6,38 +6,65 @@
     "name": "Trendyol PROD",
     "type": "trendyol",
     "status": "active",
-    "updatedAt": "2026-01-21T19:10:30.102Z",
+    "updatedAt": "2026-01-22T09:41:19.057Z",
     "createdAt": "2026-01-06T06:48:43.461Z"
   },
   "cfg": {
     "sellerId": "142312",
     "supplierId": "142312",
     "env": "prod",
-    "baseUrl": null,
+    "baseUrl": "https://apigw.trendyol.com",
     "preferSapigw": true,
     "agentName": "SoXYZ",
     "integrationName": "ECI"
   },
   "requested": {
-    "status": "WAITING_FOR_ANSWER",
-    "size": 10
+    "status": "ANSWERED",
+    "size": 50
   },
   "envSupplier": null,
   "probes": {
     "fallbackSupplier_requestedStatus": {
-      "totalElements": 0,
-      "totalPages": 0,
-      "firstQuestionIds": [],
-      "sampleDetail": null
+      "totalElements": 3,
+      "totalPages": 1,
+      "firstQuestionIds": [
+        381818389,
+        381907976,
+        381907997
+      ],
+      "sampleDetail": {
+        "id": 381818389,
+        "status": "ANSWERED",
+        "creationDate": 1769025298982,
+        "productName": "Gökkuşağı Boyama",
+        "textSnippet": "asdasdaa aa aa"
+      }
+    },
+    "fallbackSupplier_firstHit": {
+      "status": "ANSWERED",
+      "sampleDetail": {
+        "id": 381818389,
+        "status": "ANSWERED",
+        "creationDate": 1769025298982,
+        "productName": "Gökkuşağı Boyama",
+        "textSnippet": "asdasdaa aa aa"
+      }
     },
     "fallbackSupplier_statusSweep": {
-      "WAITING_FOR_ANSWER": {
-        "totalElements": 0,
-        "firstQuestionIds": []
-      },
       "ANSWERED": {
-        "totalElements": 0,
-        "firstQuestionIds": []
+        "totalElements": 3,
+        "firstQuestionIds": [
+          381818389,
+          381907976,
+          381907997
+        ]
+      },
+      "WAITING_FOR_ANSWER": {
+        "totalElements": 2,
+        "firstQuestionIds": [
+          381943324,
+          381943345
+        ]
       },
       "WAITING_FOR_APPROVE": {
         "totalElements": 0,

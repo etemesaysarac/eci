@@ -6,14 +6,14 @@
     "name": "Trendyol PROD",
     "type": "trendyol",
     "status": "active",
-    "updatedAt": "2026-01-21T19:10:30.102Z",
+    "updatedAt": "2026-01-22T09:40:53.190Z",
     "createdAt": "2026-01-06T06:48:43.461Z"
   },
   "current": {
     "sellerId": "142312",
     "supplierId": "142312",
     "env": "prod",
-    "baseUrl": null
+    "baseUrl": "https://apigw.trendyol.com"
   },
   "envIds": {
     "TRENDYOL_SELLER_ID": "142312",
@@ -49,21 +49,22 @@
     "supplierId": "142312",
     "status": "WAITING_FOR_ANSWER",
     "ok": true,
-    "totalElements": 1,
+    "totalElements": 2,
     "firstQuestionIds": [
-      "381818389"
+      "381907976",
+      "381907997"
     ],
     "sampleDetail": {
-      "creationDate": 1769025298982,
+      "creationDate": 1769074518535,
       "customerId": 34669710,
-      "id": 381818389,
+      "id": 381907976,
       "imageUrl": "https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg",
       "productName": "Gökkuşağı Boyama",
-      "public": true,
-      "showUserName": true,
+      "public": false,
+      "showUserName": false,
       "status": "WAITING_FOR_ANSWER",
-      "text": "asdasdaa aa aa",
-      "userName": "Etem S.",
+      "text": "asdasdsadasdasdsadasd",
+      "userName": "",
       "webUrl": "https://www.trendyol.com/ty/ty-p-783308123",
       "productMainId": "P165321S8624"
     }
@@ -74,7 +75,7 @@
       "sellerId": "142312",
       "supplierId": "142312",
       "env": "prod",
-      "baseUrl": null
+      "baseUrl": "https://apigw.trendyol.com"
     },
     "after": {
       "sellerId": "142312",
@@ -92,21 +93,22 @@
       "supplierId": "142312",
       "status": "WAITING_FOR_ANSWER",
       "ok": true,
-      "totalElements": 1,
+      "totalElements": 2,
       "firstQuestionIds": [
-        "381818389"
+        "381907976",
+        "381907997"
       ],
       "sampleDetail": {
-        "creationDate": 1769025298982,
+        "creationDate": 1769074518535,
         "customerId": 34669710,
-        "id": 381818389,
+        "id": 381907976,
         "imageUrl": "https://cdn.dsmcdn.com//ty1618/prod/QC/20250102/06/e2a69489-006b-3e07-9de4-8e2a898d7af9/1_org_zoom.jpg",
         "productName": "Gökkuşağı Boyama",
-        "public": true,
-        "showUserName": true,
+        "public": false,
+        "showUserName": false,
         "status": "WAITING_FOR_ANSWER",
-        "text": "asdasdaa aa aa",
-        "userName": "Etem S.",
+        "text": "asdasdsadasdasdsadasd",
+        "userName": "",
         "webUrl": "https://www.trendyol.com/ty/ty-p-783308123",
         "productMainId": "P165321S8624"
       }

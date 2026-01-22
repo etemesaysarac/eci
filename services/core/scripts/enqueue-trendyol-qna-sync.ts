@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import dotenv from "dotenv";
 import IORedis from "ioredis";
@@ -8,23 +7,19 @@ import { Queue } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 
 /**
- * Sprint 13 — Step 4.1
- * Enqueue TRENDYOL_SYNC_QNA_QUESTIONS without asking the user to manually search for ids.
+ * Sprint 13 — QnA Sync Enqueue
  *
- * Behavior:
- * - Loads .env from ECI_ENV_FILE (if set) else cwd/.env (override=true)
- * - Picks the most recently created active Trendyol connection (unless CONNECTION_ID is provided)
- * - Creates Job row + acquires per-connection lock (same pattern as server routes)
- * - Enqueues the worker job with stable name "TRENDYOL_SYNC_QNA_QUESTIONS"
+ * Enqueues TRENDYOL_SYNC_QNA_QUESTIONS with a safe 14-day max window.
  *
- * Usage:
- *   cd services/core
- *   npx tsx scripts/enqueue-trendyol-qna-sync.ts
- *
- * Optional args:
- *   npx tsx scripts/enqueue-trendyol-qna-sync.ts WAITING_FOR_ANSWER
- *   npx tsx scripts/enqueue-trendyol-qna-sync.ts ANSWERED 50
+ * Supported styles:
+ * 1) Flags (recommended):
+ *    npx tsx scripts/enqueue-trendyol-qna-sync.ts --connectionId <id> --days 14 --status WAITING_FOR_ANSWER --pageSize 50
+*    # or fetch older windows (ISO date is accepted):
+*    npx tsx scripts/enqueue-trendyol-qna-sync.ts --connectionId <id> --startIso "2020-01-01" --endIso "2020-01-15" --status ANSWERED --pageSize 50
+ * 2) Legacy positional (kept for compatibility):
+ *    npx tsx scripts/enqueue-trendyol-qna-sync.ts WAITING_FOR_ANSWER 50
  */
+
 function loadEnv() {
   const explicit = (process.env.ECI_ENV_FILE ?? "").trim();
   const p = explicit ? path.resolve(explicit) : path.resolve(process.cwd(), ".env");
@@ -41,14 +36,96 @@ function syncLockKey(connectionId: string) {
   return `eci:sync:lock:${connectionId}`;
 }
 
+type Flags = {
+  connectionId?: string;
+  days?: number;
+  status?: string;
+  pageSize?: number;
+  startDate?: number; // epoch ms (also accepts ISO date strings via Date.parse)
+  endDate?: number; // epoch ms (also accepts ISO date strings via Date.parse)
+};
+
+function parseDateLike(v: string): number {
+  const s = String(v ?? "").trim();
+  if (!s) return NaN;
+  if (/^\d{13,}$/.test(s)) return Number(s);
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function parseArgs(argv: string[]): { flags: Flags; positional: string[] } {
+  const flags: Flags = {};
+  const positional: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+
+    if (a.startsWith("--")) {
+      const [kRaw, vRaw] = a.split("=", 2);
+      const k = kRaw.replace(/^--/, "").trim();
+
+      // value can be either in --k=v or as the next token, BUT only if the next token is not another flag
+      let v: string | undefined = vRaw;
+      if (v == null) {
+        const next = argv[i + 1];
+        if (typeof next === "string" && next.length && !next.startsWith("--")) {
+          v = next;
+          i++;
+        }
+      }
+
+      const val = (v ?? "").toString().trim();
+
+      if (k === "connectionId") flags.connectionId = val;
+      else if (k === "status") flags.status = val;
+      else if (k === "days") flags.days = Number(val);
+      else if (k === "pageSize") flags.pageSize = Number(val);
+      else if (k === "startDate") flags.startDate = parseDateLike(val);
+      else if (k === "endDate") flags.endDate = parseDateLike(val);
+      else if (k === "startIso") flags.startDate = parseDateLike(val);
+      else if (k === "endIso") flags.endDate = parseDateLike(val);
+
+      continue;
+    }
+
+    positional.push(a);
+  }
+
+  return { flags, positional };
+}
+
+function clampWindow(startMs: number, endMs: number) {
+  const MAX_MS = 14 * 24 * 60 * 60 * 1000;
+
+  let endDate = Number.isFinite(endMs) ? endMs : Date.now();
+  let startDate = Number.isFinite(startMs) ? startMs : endDate - MAX_MS;
+
+  if (endDate < startDate) {
+    const tmp = startDate;
+    startDate = endDate;
+    endDate = tmp;
+  }
+
+  let clamped = false;
+  if (endDate - startDate > MAX_MS) {
+    startDate = endDate - MAX_MS;
+    clamped = true;
+  }
+
+  return { startDate, endDate, clamped };
+}
+
 async function main() {
   loadEnv();
 
-  const statusArg = (process.argv[2] ?? "").trim();
-  const pageSizeArg = (process.argv[3] ?? "").trim();
+  const { flags, positional } = parseArgs(process.argv.slice(2));
 
-  const status = statusArg.length ? statusArg : "WAITING_FOR_ANSWER";
-  const pageSizeRaw = pageSizeArg.length ? Number(pageSizeArg) : 50;
+  // legacy positional: [status] [pageSize]
+  const statusPos = (positional[0] ?? "").trim();
+  const pageSizePos = positional[1] != null ? Number(positional[1]) : NaN;
+
+  const status = String(flags.status ?? statusPos ?? "WAITING_FOR_ANSWER").trim() || "WAITING_FOR_ANSWER";
+  const pageSizeRaw = Number(flags.pageSize ?? pageSizePos ?? 50);
   const pageSize = Math.min(Math.max(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 50, 1), 50);
 
   const prisma = new PrismaClient();
@@ -57,9 +134,16 @@ async function main() {
   const queue = new Queue("eci-jobs", { connection: redis });
 
   try {
-    const explicitId = (process.env.CONNECTION_ID ?? "").trim();
+    // connectionId resolution order:
+    // 1) --connectionId flag
+    // 2) CONNECTION_ID env
+    // 3) most recent active trendyol connection
+    const explicitId = (flags.connectionId ?? process.env.CONNECTION_ID ?? "").trim();
     const conn = explicitId
-      ? await prisma.connection.findUnique({ where: { id: explicitId }, select: { id: true, type: true, status: true } })
+      ? await prisma.connection.findUnique({
+          where: { id: explicitId },
+          select: { id: true, type: true, status: true },
+        })
       : await prisma.connection.findFirst({
           where: { type: "trendyol", status: "active" },
           orderBy: { createdAt: "desc" },
@@ -67,13 +151,27 @@ async function main() {
         });
 
     if (!conn) {
-      throw new Error("No active Trendyol connection found. Set CONNECTION_ID to force one.");
+      throw new Error("No active Trendyol connection found. Pass --connectionId or set CONNECTION_ID.");
     }
     if (conn.type !== "trendyol") {
       throw new Error(`Connection type is not trendyol: ${conn.type}`);
     }
 
     const connectionId = conn.id;
+
+    // Date window:
+    // - If startDate & endDate are both provided => use them (clamped to 14d)
+    // - Else use --days (default 14) ending at now (clamped)
+    const now = Date.now();
+    const days = Number.isFinite(Number(flags.days)) ? Math.max(1, Number(flags.days)) : 14;
+
+    const endRaw = Number.isFinite(Number(flags.endDate)) ? Number(flags.endDate) : now;
+    const startRaw =
+      Number.isFinite(Number(flags.startDate))
+        ? Number(flags.startDate)
+        : endRaw - days * 24 * 60 * 60 * 1000;
+
+    const { startDate, endDate, clamped } = clampWindow(startRaw, endRaw);
 
     // Acquire per-connection lock (same pattern as server routes)
     const SYNC_LOCK_TTL_MS = Number(process.env.SYNC_LOCK_TTL_MS ?? 60 * 60 * 1000);
@@ -100,7 +198,7 @@ async function main() {
 
     await queue.add(
       "TRENDYOL_SYNC_QNA_QUESTIONS",
-      { jobId: jobRow.id, connectionId, params: { status, pageSize } },
+      { jobId: jobRow.id, connectionId, params: { status, pageSize, startDate, endDate } },
       {
         attempts: 5,
         backoff: { type: "exponential", delay: 1000 },
@@ -109,7 +207,26 @@ async function main() {
       }
     );
 
-    console.log(JSON.stringify({ ok: true, jobId: jobRow.id, connectionId, status, pageSize }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          ok: true,
+          jobId: jobRow.id,
+          connectionId,
+          params: {
+            status,
+            pageSize,
+            startDate,
+            endDate,
+            clamped,
+            startIso: new Date(startDate).toISOString(),
+            endIso: new Date(endDate).toISOString(),
+          },
+        },
+        null,
+        2
+      )
+    );
   } finally {
     await queue.close().catch(() => {});
     await redis.quit().catch(() => {});

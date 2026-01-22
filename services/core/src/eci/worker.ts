@@ -1619,7 +1619,9 @@ const worker = new Worker(
 
       let summary: any = null;
 
-      switch (job.name) {
+      const effectiveJobName = (job.name === "job" && (job as any).data?.type) ? (job as any).data.type : job.name;
+
+      switch (effectiveJobName) {
         case "TRENDYOL_SYNC_ORDERS":
         case "TRENDYOL_SYNC_SHIPMENT_PACKAGES": {
           // Determine sync window: manual params override; otherwise auto window from lastSuccessAt
@@ -1890,7 +1892,7 @@ case "TRENDYOL_CLAIM_CREATE": {
         }
 
         default:
-          throw new Error(`unknown job: ${job.name}`);
+          throw new Error(`unknown job: ${effectiveJobName}`);
       }
 
       // Success path
