@@ -1,240 +1,167 @@
-# ECI — Sprint 14 (Finance / Mutabakat) — MASTER CONTEXT (Yeni Chat’e Yapıştır)
-
-## 0) Altın Kurallar (Hız + Kanıt + Kontrol)
-- Referans kod tabanı: “dosyalar.zip”.
-- Değişiklik kuralı: Sadece güncellenen dosyalar patch ZIP.
-- Kanıt standardı: Her adım bir proof JSON üretir (Çıktılar.txt yerine proof’lar prefer).
-- Trendyol doğrulama kaynağı: Trendyol.pdf “Muhasebe ve Finans” / “Cari Hesap Ekstresi”.
-- Kritik kurallar (PDF):
-  - transactionType zorunlu, tek istekte tek type
-  - startDate+endDate zorunlu, aralık 15 günü geçemez
-  - settlements ve otherfinancials farklı kayıtlar döner
-  - paymentOrderId ile ödeme eşleştirme yapılır
-
-## 1) Roller
-- Etem (stajyer): komutları çalıştırır, çıkan proof dosyalarını yükler.
-- Baş Mühendis (sen): patch ZIP üretir, komutları net verir, PDF uyumunu tek tek kontrol eder.
-
-## 2) Sprint 14 Amaç
-“ne sattım / ne kesildi / ne yattı” mutabakatını panelde raporlayacak altyapı.
-Kapsam:
-A) Read path: settlements + otherfinancials + cargo invoice items çekilebiliyor kanıtı
-B) DB model: Settlement, FinancialTxn (+ ops CargoInvoiceItem)
-C) Worker sync: idempotent sync
-D) Basit report endpoint’leri (panel grafikleri için)
-
-## 3) Trendyol Finance — Sözleşme (PDF)
-### 3.1 Settlements
-- GET /integration/finance/che/sellers/{sellerId}/settlements
-- Query: startDate, endDate, transactionType, page, size
-- Not: Bu servis satış/iade/indirim/kupon/provizyon detaylarına gider.
-
-### 3.2 OtherFinancials (Cari Hesap Ekstresi)
-- GET /integration/finance/che/sellers/{sellerId}/otherfinancials
-- Kurallar:
-  - transactionType zorunlu (tek type)
-  - startDate+endDate zorunlu
-  - max 15 günlük tarih aralığı
-
-### 3.3 CargoInvoiceItems (Kargo Faturası Detayları)
-- Trendyol’un satıcıya kestiği kargo faturası kalem detayları.
-- (Not: Bu servis genellikle “DeductionInvoices içindeki invoiceSerialNumber + invoiceNumber” üzerinden çağrılır.)
-
-## 4) Sprint 14 — Hızlı İskelet (mikro adımlar)
-> Her adım tek hedef + tek proof dosyası.
-
-### 14.0 PROBE (read-only, en hızlı kanıt)
-Hedef: Prod endpoint erişimi + auth + param kurallarını doğrula.
-1) settlements probe → proofs/finance_probe_settlements.json
-2) otherfinancials probe → proofs/finance_probe_otherfinancials.json
-3) cargo invoice sample probe → proofs/finance_probe_cargo_invoice_items.json (mümkünse)
-
-Kabul:
-- Her proof’ta ok=true ve response summary (count/totalElements vs) var.
-
-### 14.1 DB (minimal model)
-Hedef: Finance verisini saklayacak çekirdek tablolar.
-- Settlement:
-  - connectionId, sellerId, transactionType, startDate, endDate
-  - paymentOrderId (varsa), totals, raw(json), createdAt/updatedAt
-- FinancialTxn:
-  - connectionId, transactionType, transactionDate, debt/credit
-  - orderNumber/paymentOrderId/barcode vb referanslar
-  - raw(json)
-- (Ops) CargoInvoiceItem:
-  - invoiceSerialNumber, invoiceNumber, line items, totals, raw(json)
-
-Kabul:
-- prisma migrate/deploy çalışır, tablolar oluşur.
-
-### 14.2 WORKER SYNC (idempotent)
-Hedef: Aynı pencere tekrar sync edilince duplicate üretmeden upsert.
-Job’lar:
-- TRENDYOL_SYNC_FINANCE_SETTLEMENTS (windowed)
-- TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (windowed + transactionType)
-- TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (deduction invoices -> detail)
-
-Kabul:
-- Worker log: fetched>0 + upserted>0 (veya “0 ise nedeni kanıtlı”)
-- 2. çalıştırmada duplicate yok (count stabil)
-
-### 14.3 API REPORTS (panel için basit)
-Hedef: Panel grafiklerine malzeme verecek 3 endpoint.
-- GET /v1/finance/summary?connectionId&startDate&endDate
-  - gross/net/deductions (yaklaşık)
-- GET /v1/finance/settlements?connectionId&startDate&endDate&transactionType&page&pageSize
-- GET /v1/finance/ledger?connectionId&startDate&endDate&transactionType&page&pageSize
-
-Kabul:
-- 200 OK + pagination çalışır + totals doğru
-
-## 5) Kanıt Dosyası (SPRINT_14_PROOF.md) — minimum şablon
-1) PDF sözleşme maddeleri (transactionType zorunlu, 15 gün kuralı, servis ayrımı)
-2) PROBE kanıtları (3 JSON + özet tablo)
-3) DB kanıtı (count’lar + sample record)
-4) SYNC kanıtı (worker log start->done + idempotency)
-5) Report kanıtı (3 endpoint örnek response)
-
-## 6) Çalışma stratejisi (uzun beklemeyi engelle)
-- Önce 14.0 PROBE: sadece 1-2 request ile “erişim var” kanıtı al.
-- Sonra 14.1 DB: minimal tablo + raw sakla, şemayı sonra güzelleştir.
-- Sonra 14.2 SYNC: 15 gün kuralına göre windowing zorunlu; pencereyi küçük tut.
-- En son 14.3 REPORT: DB’den okunur endpoint’ler (fast win).
-
-
-
-
-Sprint 14’ün ana fikri: “ne sattım / ne kesildi / ne yattı”. Trendyol dokümanında Finance tarafı 3 parçaya ayrılıyor:
-
-Settlements (mutabakat / ödeme tarafı) 
-
-
-
-OtherFinancials (Cari Hesap Ekstresi) (kesintiler/hareketler; transactionType ile) ve 15 gün kuralı 
-
-
-
- 
-
-
-CargoInvoiceItems (kargo faturası detayları; “DeductionInvoices” içindeki seri/numara ile çağrılıyor) 
-
-
-Sprint 14’ü “hızlı ve kanıtlı” bitirmek için mikro-adımlar
-
-14.0 — Sadece PROBE (read-only, kanıt üret)
-
-finance_probe_settlements_latest_connection.json üret
-
-finance_probe_otherfinancials_latest_connection.json üret
-
-(varsa) finance_probe_cargoInvoiceItems_sample.json üret
-
-Burada amaç: endpoint erişimi + auth + pagination + 15-gün pencere kuralını doğrulamak. 
-
-
-
-14.1 — DB tasarımı (minimal, sonra genişlet)
-
-Settlement tablosu: connectionId + (Trendyol’un unique kimliği: settlement/paymentOrder vs) + tarih + tutar alanları
-
-FinancialTxn tablosu: connectionId + transactionType + refId + debit/credit + tarih + açıklama + ham payload snapshot
-
-(opsiyonel) CargoInvoiceItem tablosu: invoiceSerial/number + line items + tutar
-
-14.2 — Worker SYNC işleri
-
-TRENDYOL_SYNC_FINANCE_SETTLEMENTS
-
-TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (transactionType parametresi zorunlu; tek tip/istek; 15 gün pencere) 
-
-
-
- 
-
-
-
-TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (DeductionInvoices → invoiceSerial+invoiceNumber’dan çağır) 
-
-
-
-14.3 — Basit rapor endpoint’leri (panel grafikleri için)
-
-GET /reports/finance/summary?from&to
-
-gross satış (FinancialTxn içinden)
-
-kesintiler (komisyon/kargo/iadeler vb)
-
-net (yaklaşık)
-
-GET /reports/finance/settlements?from&to (yatmış ödemeler)
-
-GET /reports/finance/ledger?from&to&transactionType= (cari hareketler)
-
-14.4 — Kapanış kabul kriterleri (net ve ölçülebilir)
-
-PROBE dosyaları oluşacak ve içinde count>0 (veya boşsa “neden boş” kanıtlı) olacak.
-
-DB’de aynı pencereyi 2 kez sync edince idempotent (duplicate yok).
-
-“15 gün kuralı” ihlal edilmeden otomatik pencereleme yapılacak. 
-Çıktılar
-
-CargoInvoiceItems: En az 1 DeductionInvoices kaydından invoice detail çekip DB’ye yazabildiğimizi kanıtlayacağız. 
-
-
-
-ECI — Sprint 14 (Finance / Mutabakat) — MASTER CONTEXT
-
-AMAÇ:
-“Ne sattım / ne kesildi / ne yattı” finans mutabakat ekranı için veri altyapısını kurmak.
-
-KAPSAM (Trendyol.pdf):
-- Settlements (mutabakat) endpoint’i
-- Cari Hesap Ekstresi (otherfinancials) endpoint’i: transactionType zorunlu + maksimum 15 günlük tarih aralığı
-- CargoInvoiceItems endpoint’i: DeductionInvoices içindeki invoiceSerialNumber+invoiceNumber’dan detay çekme
-
-ÇALIŞMA KURALLARI:
-- Ben (Etem) stajyerim: komutları çalıştırır, proof dosyalarını ve gerekli çıktıları yüklerim.
-- Sen baş mühendissin: kod değişikliklerini patch zip olarak verirsin (yalnız değişen dosyalar).
-- Kanıt yöntemi: “Çıktılar.txt” yerine mümkün olduğunca /proofs altına JSON proof üretip onunla ilerle.
-- Her adım küçük olacak (14.0, 14.1, 14.2...) ve her adımın sonunda:
-  (1) çalıştırılacak komutlar
-  (2) beklenen proof dosyası
-  (3) kabul kriteri net yazılacak.
-
-ŞU ANA KADAR TAMAMLANANLAR (Özet):
-- Sprint 9: Product catalog sync
-- Sprint 10: Price/Stock push
-- Sprint 11: Shipment
-- Sprint 12: Claims/İade
-- Sprint 13: QnA sync + answer post (proof bazlı)
-
-SPRINT 14 YOL HARİTASI:
-14.0 PROBE (read-only):
-- finance_probe_settlements_latest_connection.json
-- finance_probe_otherfinancials_latest_connection.json
-- finance_probe_cargoInvoiceItems_sample.json (varsa)
-
-14.1 DB:
-- Settlement
-- FinancialTxn
-- (ops) CargoInvoiceItem
-
-14.2 WORKER:
-- TRENDYOL_SYNC_FINANCE_SETTLEMENTS
-- TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (transactionType + 15 gün pencereleme)
-- TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (DeductionInvoices -> invoiceSerial/number)
-
-14.3 API REPORTS:
-- /reports/finance/summary
-- /reports/finance/settlements
-- /reports/finance/ledger
-
-KABUL:
-- Proof dosyaları oluşacak
-- Sync idempotent olacak
-- 15 gün kuralına uyulacak
-- Cargo invoice detail en az 1 örnekle kanıtlanacak
+PS C:\dev\eci\services\core\services\core> cd C:\dev\eci\services\core
+PS C:\dev\eci\services\core> npm i
+
+up to date, audited 944 packages in 3s
+
+232 packages are looking for funding
+  run `npm fund` for details
+
+3 vulnerabilities (1 low, 1 moderate, 1 high)
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+PS C:\dev\eci\services\core> cd C:\dev\eci
+PS C:\dev\eci> npm run eci:db
+
+> eci@0.0.1 eci:db
+> npm -w @eci/core run prisma:deploy
+
+
+> @eci/core@0.0.1 prisma:deploy
+> prisma migrate deploy
+
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "eci", schema "public" at "localhost:5432"
+
+13 migrations found in prisma/migrations
+
+
+No pending migrations to apply.
+PS C:\dev\eci> curl.exe -X POST "http://localhost:3001/v1/connections/<CONNECTION_ID>/sync/finance" `
+>>   -H "Content-Type: application/json" `
+>>   -d "{\"windowDays\":15,\"lookbackWindows\":2,\"size\":1000}"
+{"error":"internal_error","message":"Expected property name or '}' in JSON at position 1 (line 1 column 2)"}curl: (3) unmatched close brace/bracket in URL position 47:
+windowDays\:15,\lookbackWindows\:2,\size\:1000}
+                                              ^
+PS C:\dev\eci> curl.exe "http://localhost:3001/v1/finance/summary?connectionId=<CONNECTION_ID>&startDate=2026-01-08T00:00:00.000Z&endDate=2026-01-23T23:59:59.999Z"
+{"error":"not_found"}
+PS C:\dev\eci> curl.exe "http://localhost:3001/v1/finance/settlements?connectionId=<CONNECTION_ID>&startDate=2026-01-08T00:00:00.000Z&endDate=2026-01-23T23:59:59.999Z&transactionType=SellerRevenuePositive&page=0&pageSize=100"
+{"page":0,"pageSize":100,"total":0,"rows":[]}
+PS C:\dev\eci> curl.exe "http://localhost:3001/v1/finance/ledger?connectionId=<CONNECTION_ID>&startDate=2026-01-08T00:00:00.000Z&endDate=2026-01-23T23:59:59.999Z&transactionType=PaymentOrder&page=0&pageSize=100"
+{"error":"not_found"}
+PS C:\dev\eci> cd C:\dev\eci\services\core
+PS C:\dev\eci\services\core> npx ts-node scripts/finance-probe-one-window.ts
+C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+scripts/finance-probe-one-window.ts:26:16 - error TS2353: Object literal may only specify known properties, and 'trendyol' does not exist in type 'ConnectionInclude<DefaultArgs>'.
+
+26     include: { trendyol: true },
+                  ~~~~~~~~
+scripts/finance-probe-one-window.ts:29:14 - error TS2339: Property 'trendyol' does not exist on type '{ id: string; type: string; name: string; status: string; configEnc: string; createdAt: Date; updatedAt: Date; }'.
+
+29   if (!conn?.trendyol) throw new Error("No trendyol connection found");
+                ~~~~~~~~
+scripts/finance-probe-one-window.ts:31:20 - error TS2339: Property 'trendyol' does not exist on type '{ id: string; type: string; name: string; status: string; configEnc: string; createdAt: Date; updatedAt: Date; }'.
+
+31   const cfg = conn.trendyol as any;
+                      ~~~~~~~~
+
+    at createTSError (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 2353, 2339, 2339 ]
+}
+PS C:\dev\eci\services\core> npx ts-node scripts/finance-probe-latest-connection.ts
+C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:859
+    return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+           ^
+TSError: ⨯ Unable to compile TypeScript:
+scripts/finance-probe-latest-connection.ts:49:16 - error TS2353: Object literal may only specify known properties, and 'trendyol' does not exist in type 'ConnectionInclude<DefaultArgs>'.
+
+49     include: { trendyol: true },
+                  ~~~~~~~~
+scripts/finance-probe-latest-connection.ts:52:14 - error TS2339: Property 'trendyol' does not exist on type '{ id: string; type: string; name: string; status: string; configEnc: string; createdAt: Date; updatedAt: Date; }'.
+
+52   if (!conn?.trendyol) throw new Error("No trendyol connection found");
+                ~~~~~~~~
+scripts/finance-probe-latest-connection.ts:54:20 - error TS2339: Property 'trendyol' does not exist on type '{ id: string; type: string; name: string; status: string; configEnc: string; createdAt: Date; updatedAt: Date; }'.
+
+54   const cfg = conn.trendyol as any;
+                      ~~~~~~~~
+
+    at createTSError (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:859:12)
+    at reportTSError (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:863:19)
+    at getOutput (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1077:36)
+    at Object.compile (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1433:41)
+    at Module.m._compile (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1617:30)
+    at node:internal/modules/cjs/loader:1839:10
+    at Object.require.extensions.<computed> [as .ts] (C:\dev\eci\services\core\node_modules\ts-node\src\index.ts:1621:12)
+    at Module.load (node:internal/modules/cjs/loader:1441:32)
+    at Function._load (node:internal/modules/cjs/loader:1263:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14) {
+  diagnosticCodes: [ 2353, 2339, 2339 ]
+}
+PS C:\dev\eci\services\core>
+
+PS C:\dev\eci\services\core> npm run eci:api
+
+> @eci/core@0.0.1 eci:api
+> tsx src/eci/server.ts
+
+[eci-api] pid=27020 listening on http://127.0.0.1:3001
+[redis] connect
+[redis] ready
+[eci-api] route_error SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    at JSON.parse (<anonymous>)
+    at parse (C:\dev\eci\node_modules\body-parser\lib\types\json.js:74:19)
+    at C:\dev\eci\node_modules\body-parser\lib\read.js:163:18
+    at AsyncResource.runInAsyncScope (node:async_hooks:214:14)
+    at invokeCallback (C:\dev\eci\node_modules\raw-body\index.js:238:16)
+    at done (C:\dev\eci\node_modules\raw-body\index.js:227:7)
+    at IncomingMessage.onEnd (C:\dev\eci\node_modules\raw-body\index.js:287:7)
+    at IncomingMessage.emit (node:events:519:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  expose: true,
+  statusCode: 400,
+  status: 400,
+  body: '{\\',
+  type: 'entity.parse.failed'
+}
+
+PS C:\dev\eci\services\core> npm run eci:worker
+
+> @eci/core@0.0.1 eci:worker
+> tsx src/eci/worker.ts
+
+
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+Error: Transform failed with 1 error:
+C:\dev\eci\services\core\src\eci\worker.ts:51:0: ERROR: Expected identifier but found ","
+    at failureErrorWithLog (C:\dev\eci\node_modules\esbuild\lib\main.js:1467:15)
+    at C:\dev\eci\node_modules\esbuild\lib\main.js:736:50
+    at responseCallbacks.<computed> (C:\dev\eci\node_modules\esbuild\lib\main.js:603:9)
+    at handleIncomingPacket (C:\dev\eci\node_modules\esbuild\lib\main.js:658:12)
+    at Socket.readFromStdout (C:\dev\eci\node_modules\esbuild\lib\main.js:581:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v22.19.0
+npm error Lifecycle script `eci:worker` failed with error:
+npm error code 1
+npm error path C:\dev\eci\services\core
+npm error workspace @eci/core@0.0.1
+npm error location C:\dev\eci\services\core
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c tsx src/eci/worker.ts
+PS C:\dev\eci\services\core>
 

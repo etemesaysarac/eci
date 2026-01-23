@@ -6,6 +6,7 @@ import { registerSprint10InventoryRoutes } from "./server.sprint10";
 import { registerSprint11InvoiceLabelRoutes } from "./server.sprint11";
 import { registerSprint12ClaimRoutes } from "./server.sprint12";
 import { registerSprint13QnaRoutes } from "./server.sprint13";
+import { registerSprint14FinanceRoutes } from "./server.sprint14";
 
 import express, { type Request, type Response, type NextFunction } from "express";
 import IORedis from "ioredis";
@@ -52,6 +53,7 @@ registerSprint10InventoryRoutes(app);
 registerSprint11InvoiceLabelRoutes(app);
 registerSprint12ClaimRoutes(app);
 registerSprint13QnaRoutes(app);
+registerSprint14FinanceRoutes(app);
 
 // Express 4 does NOT automatically catch async errors.
 // Without this wrapper, a thrown error inside an async route can crash the process.

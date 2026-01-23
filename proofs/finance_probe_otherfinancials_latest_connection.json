@@ -1,7 +1,8 @@
 {
   "ok": true,
   "envPath": "C:\\dev\\eci\\services\\core\\.env",
-  "windowDays": 7,
+  "windowDays": 15,
+  "lookbackWindows": 6,
   "pageSize": 1000,
   "connection": {
     "id": "cmk28anrb0000e6gwaprps4hn",
@@ -28,10 +29,106 @@
   "otherfinancials": {
     "ok": true,
     "endpointOk": true,
-    "dataOk": false,
+    "dataOk": true,
     "attempts": [
       {
         "transactionType": "PaymentOrder",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:48.889Z",
+          "endDate": "2026-01-23T07:28:48.889Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:49.022Z",
+          "endDate": "2026-01-08T07:28:49.022Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:49.142Z",
+          "endDate": "2025-12-24T07:28:49.142Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:49.319Z",
+          "endDate": "2025-12-09T07:28:49.319Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:49.385Z",
+          "endDate": "2025-11-24T07:28:49.385Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:49.460Z",
+          "endDate": "2025-11-09T07:28:49.460Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -44,6 +141,102 @@
       },
       {
         "transactionType": "WireTransfer",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:49.591Z",
+          "endDate": "2026-01-23T07:28:49.591Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:49.663Z",
+          "endDate": "2026-01-08T07:28:49.663Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:49.749Z",
+          "endDate": "2025-12-24T07:28:49.749Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:49.827Z",
+          "endDate": "2025-12-09T07:28:49.827Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:49.906Z",
+          "endDate": "2025-11-24T07:28:49.906Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:49.988Z",
+          "endDate": "2025-11-09T07:28:49.988Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -56,6 +249,102 @@
       },
       {
         "transactionType": "CashAdvance",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:50.061Z",
+          "endDate": "2026-01-23T07:28:50.061Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:50.144Z",
+          "endDate": "2026-01-08T07:28:50.144Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:50.216Z",
+          "endDate": "2025-12-24T07:28:50.216Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:50.286Z",
+          "endDate": "2025-12-09T07:28:50.286Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:50.373Z",
+          "endDate": "2025-11-24T07:28:50.373Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:50.490Z",
+          "endDate": "2025-11-09T07:28:50.490Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -68,6 +357,12 @@
       },
       {
         "transactionType": "Stoppage",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:50.557Z",
+          "endDate": "2026-01-23T07:28:50.557Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -77,8 +372,522 @@
           "contentCount": 0
         },
         "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:50.634Z",
+          "endDate": "2026-01-08T07:28:50.634Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:50.720Z",
+          "endDate": "2025-12-24T07:28:50.720Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:50.793Z",
+          "endDate": "2025-12-09T07:28:50.793Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:50.872Z",
+          "endDate": "2025-11-24T07:28:50.872Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:50.997Z",
+          "endDate": "2025-11-09T07:28:50.997Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:51.071Z",
+          "endDate": "2026-01-23T07:28:51.071Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:51.149Z",
+          "endDate": "2026-01-08T07:28:51.149Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:51.236Z",
+          "endDate": "2025-12-24T07:28:51.236Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:51.315Z",
+          "endDate": "2025-12-09T07:28:51.315Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:51.387Z",
+          "endDate": "2025-11-24T07:28:51.387Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "IncomingTransfer",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:51.459Z",
+          "endDate": "2025-11-09T07:28:51.459Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:51.548Z",
+          "endDate": "2026-01-23T07:28:51.548Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:51.631Z",
+          "endDate": "2026-01-08T07:28:51.631Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:51.703Z",
+          "endDate": "2025-12-24T07:28:51.703Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:51.792Z",
+          "endDate": "2025-12-09T07:28:51.792Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:51.872Z",
+          "endDate": "2025-11-24T07:28:51.872Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "ReturnInvoice",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:51.947Z",
+          "endDate": "2025-11-09T07:28:51.947Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:52.021Z",
+          "endDate": "2026-01-23T07:28:52.021Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:52.095Z",
+          "endDate": "2026-01-08T07:28:52.095Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:52.168Z",
+          "endDate": "2025-12-24T07:28:52.168Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:52.240Z",
+          "endDate": "2025-12-09T07:28:52.240Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:52.311Z",
+          "endDate": "2025-11-24T07:28:52.311Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionAgreementInvoice",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:52.390Z",
+          "endDate": "2025-11-09T07:28:52.390Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "DeductionInvoices",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:52.458Z",
+          "endDate": "2026-01-23T07:28:52.458Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "DeductionInvoices",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:52.534Z",
+          "endDate": "2026-01-08T07:28:52.534Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 1,
+          "totalElements": 1,
+          "contentCount": 1
+        },
+        "sample": {
+          "id": "DDF2026000643484",
+          "transactionDate": 1767762033851,
+          "barcode": null,
+          "transactionType": "Tedarik Edememe",
+          "receiptId": null,
+          "description": "Müşteri tarafından oluşturulan siparişin temin edilememesi ve/veya termin süresinin sözleşmede yer alan süre kadar aşılarak geciktirilmesi durumunda tarafınıza yansıtılan tazmin faturasıdır.",
+          "debt": 50,
+          "credit": 0,
+          "paymentPeriod": null,
+          "commissionRate": null,
+          "commissionAmount": null,
+          "commissionInvoiceSerialNumber": "DDF2026000643484",
+          "sellerRevenue": null,
+          "orderNumber": null,
+          "orderDate": null,
+          "paymentOrderId": null,
+          "paymentDate": 1767762033851,
+          "sellerId": 142312,
+          "storeId": null,
+          "storeName": null,
+          "storeAddress": null,
+          "country": "Türkiye",
+          "currency": "TRY",
+          "affiliate": "TRENDYOLTR",
+          "shipmentPackageId": null
+        }
       }
     ],
-    "reason": "empty_result_for_test_window_or_transactionTypes"
+    "chosen": {
+      "transactionType": "DeductionInvoices",
+      "windowIndex": 1
+    },
+    "result": {
+      "page": 0,
+      "size": 1000,
+      "totalPages": 1,
+      "totalElements": 1,
+      "content": [
+        {
+          "id": "DDF2026000643484",
+          "transactionDate": 1767762033851,
+          "barcode": null,
+          "transactionType": "Tedarik Edememe",
+          "receiptId": null,
+          "description": "Müşteri tarafından oluşturulan siparişin temin edilememesi ve/veya termin süresinin sözleşmede yer alan süre kadar aşılarak geciktirilmesi durumunda tarafınıza yansıtılan tazmin faturasıdır.",
+          "debt": 50,
+          "credit": 0,
+          "paymentPeriod": null,
+          "commissionRate": null,
+          "commissionAmount": null,
+          "commissionInvoiceSerialNumber": "DDF2026000643484",
+          "sellerRevenue": null,
+          "orderNumber": null,
+          "orderDate": null,
+          "paymentOrderId": null,
+          "paymentDate": 1767762033851,
+          "sellerId": 142312,
+          "storeId": null,
+          "storeName": null,
+          "storeAddress": null,
+          "country": "Türkiye",
+          "currency": "TRY",
+          "affiliate": "TRENDYOLTR",
+          "shipmentPackageId": null
+        }
+      ]
+    }
   }
 }

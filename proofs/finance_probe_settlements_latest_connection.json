@@ -1,7 +1,8 @@
 {
   "ok": true,
   "envPath": "C:\\dev\\eci\\services\\core\\.env",
-  "windowDays": 7,
+  "windowDays": 15,
+  "lookbackWindows": 6,
   "pageSize": 1000,
   "connection": {
     "id": "cmk28anrb0000e6gwaprps4hn",
@@ -32,6 +33,102 @@
     "attempts": [
       {
         "transactionType": "SellerRevenuePositive",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:46.539Z",
+          "endDate": "2026-01-23T07:28:46.539Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenuePositive",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:46.780Z",
+          "endDate": "2026-01-08T07:28:46.780Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenuePositive",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:46.854Z",
+          "endDate": "2025-12-24T07:28:46.854Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenuePositive",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:46.940Z",
+          "endDate": "2025-12-09T07:28:46.940Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenuePositive",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:47.016Z",
+          "endDate": "2025-11-24T07:28:47.016Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenuePositive",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:47.107Z",
+          "endDate": "2025-11-09T07:28:47.107Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -44,6 +141,102 @@
       },
       {
         "transactionType": "SellerRevenueNegative",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:47.188Z",
+          "endDate": "2026-01-23T07:28:47.188Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenueNegative",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:47.260Z",
+          "endDate": "2026-01-08T07:28:47.260Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenueNegative",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:47.334Z",
+          "endDate": "2025-12-24T07:28:47.334Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenueNegative",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:47.422Z",
+          "endDate": "2025-12-09T07:28:47.422Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenueNegative",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:47.505Z",
+          "endDate": "2025-11-24T07:28:47.505Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "SellerRevenueNegative",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:47.577Z",
+          "endDate": "2025-11-09T07:28:47.577Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -56,6 +249,102 @@
       },
       {
         "transactionType": "CommissionNegative",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:47.646Z",
+          "endDate": "2026-01-23T07:28:47.646Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionNegative",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:47.717Z",
+          "endDate": "2026-01-08T07:28:47.717Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionNegative",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:47.790Z",
+          "endDate": "2025-12-24T07:28:47.790Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionNegative",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:47.861Z",
+          "endDate": "2025-12-09T07:28:47.861Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionNegative",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:47.931Z",
+          "endDate": "2025-11-24T07:28:47.931Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionNegative",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:47.999Z",
+          "endDate": "2025-11-09T07:28:47.999Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -68,6 +357,12 @@
       },
       {
         "transactionType": "CommissionPositive",
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:48.077Z",
+          "endDate": "2026-01-23T07:28:48.077Z"
+        },
         "ok": true,
         "summary": {
           "page": 0,
@@ -77,8 +372,134 @@
           "contentCount": 0
         },
         "sample": null
+      },
+      {
+        "transactionType": "CommissionPositive",
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:48.150Z",
+          "endDate": "2026-01-08T07:28:48.150Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionPositive",
+        "windowIndex": 2,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-09T07:28:48.224Z",
+          "endDate": "2025-12-24T07:28:48.224Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionPositive",
+        "windowIndex": 3,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-24T07:28:48.296Z",
+          "endDate": "2025-12-09T07:28:48.296Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionPositive",
+        "windowIndex": 4,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-11-09T07:28:48.366Z",
+          "endDate": "2025-11-24T07:28:48.366Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CommissionPositive",
+        "windowIndex": 5,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-10-25T07:28:48.436Z",
+          "endDate": "2025-11-09T07:28:48.436Z"
+        },
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 0,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 1,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 2,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 3,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 4,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
+      },
+      {
+        "transactionType": "PaymentOrder",
+        "windowIndex": 5,
+        "ok": false,
+        "error": "Trendyol GET https://apigw.trendyol.com/integration/finance/che/sellers/142312/settlements failed (400) :: {\"keys\":[\"timestamp\",\"exception\",\"errors\"],\"errorsCount\":1,\"errorsSample\":[{\"errorCode\":\"400\",\"key\":\"keys.error.parameter.invalid.transactionType\",\"message\":\"Lütfen Belirlenmiş Tiplerden Birini Seçiniz : [Sale, Return, Discount, DiscountCancel, Coupon, CouponCancel, ProvisionPositive, ProvisionNegative, TyDiscount, TyDiscountCancel, TyCoupon, TyCouponCancel, SellerRevenuePositive, SellerRevenueNegative, CommissionPositive, CommissionNegative, SellerRevenuePositiveCancel, SellerRevenueNegativeCancel, CommissionPositiveCancel, CommissionNegativeCancel, ManualRefund, ManualRefundCancel, DeliveryFee, DeliveryFeeCancel, PayByLink]\"}]}"
       }
     ],
-    "reason": "empty_result_for_test_window_or_transactionTypes"
+    "reason": "empty_result_for_test_windows_or_transactionTypes"
   }
 }

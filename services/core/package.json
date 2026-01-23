@@ -8,16 +8,13 @@
   "scripts": {
     "eci:api": "tsx src/eci/server.ts",
     "eci:worker": "tsx src/eci/worker.ts",
-
     "eci:boot": "cd ../../infra && docker compose up -d && docker ps",
     "eci:db": "npm run prisma:deploy && npm run prisma:generate",
-
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -29,7 +26,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "dev": "npm run eci:api",
+    "worker": "npm run eci:worker"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

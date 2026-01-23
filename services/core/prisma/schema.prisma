@@ -45,7 +45,13 @@ model Connection {
   questions             Question[]
   answers               Answer[]
   qnaCommands           QnaCommand[]
+
+  // Sprint 14: Finance / Mutabakat
+  settlements           Settlement[]
+  financialTxns         FinancialTxn[]
+  cargoInvoiceItems     CargoInvoiceItem[]
 }
+
 
 model Job {
   id           String   @id @default(cuid())
@@ -497,4 +503,110 @@ model QnaCommand {
   @@index([questionId])
   @@index([commandType])
   @@index([status])
+}
+
+// Sprint 14: Finance / Mutabakat
+
+model Settlement {
+  id              String     @id @default(cuid())
+  connectionId    String
+  connection      Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  marketplace     String     @default("trendyol")
+  sellerId        String
+
+  // Finance query context (debug/proof)
+  transactionType String
+  startDate       DateTime
+  endDate         DateTime
+
+  // Remote refs (best-effort; may be null depending on transactionType)
+  paymentOrderId  String?
+  orderNumber     String?
+  settlementDate  DateTime?
+
+  // Amounts (best-effort; keep raw for full fidelity)
+  currencyType    Int?
+  grossAmount     Float?
+  netAmount       Float?
+
+  // Idempotency key (computed in worker; include connectionId in the hash input)
+  dedupeKey       String     @unique
+
+  raw             Json
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([connectionId, transactionType, startDate, endDate])
+  @@index([paymentOrderId])
+  @@index([orderNumber])
+}
+
+model FinancialTxn {
+  id                String     @id @default(cuid())
+  connectionId      String
+  connection        Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  marketplace       String     @default("trendyol")
+  sellerId          String
+
+  transactionType   String
+  transactionDate   DateTime?
+  description       String?
+
+  // debit/credit style amounts (best-effort)
+  debt              Float?
+  credit            Float?
+  currencyType      Int?
+
+  // Common refs (best-effort)
+  orderNumber       String?
+  paymentOrderId    String?
+  barcode           String?
+  invoiceSerialNumber String?
+  invoiceNumber       String?
+
+  // Idempotency key (computed in worker; include connectionId in the hash input)
+  dedupeKey         String     @unique
+
+  raw               Json
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([connectionId, transactionType])
+  @@index([transactionDate])
+  @@index([paymentOrderId])
+  @@index([orderNumber])
+  @@index([barcode])
+  @@index([invoiceSerialNumber, invoiceNumber])
+}
+
+model CargoInvoiceItem {
+  id                String     @id @default(cuid())
+  connectionId      String
+  connection        Connection @relation(fields: [connectionId], references: [id], onDelete: Restrict)
+
+  marketplace       String     @default("trendyol")
+  sellerId          String
+
+  invoiceSerialNumber String
+  invoiceNumber       String
+  lineNumber          Int?
+
+  // Best-effort refs
+  orderNumber       String?
+  barcode           String?
+
+  // Amounts (best-effort)
+  currencyType      Int?
+  amount            Float?
+
+  // Idempotency key (computed in worker; include connectionId in the hash input)
+  dedupeKey         String     @unique
+
+  raw               Json
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([connectionId, invoiceSerialNumber, invoiceNumber])
 }

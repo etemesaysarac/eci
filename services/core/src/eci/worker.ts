@@ -48,7 +48,10 @@ import {
   type ProductsListQuery,
   type QnaQuestionsFilterQuery,
   type TrendyolConfig,
-} from "./connectors/trendyol/client";
+,
+  trendyolFinanceCheSettlements,
+  trendyolFinanceCheOtherFinancials,
+  trendyolFinanceCargoInvoiceItems} from "./connectors/trendyol/client";
 
 process.on("unhandledRejection", (e: unknown) => console.error("[unhandledRejection]", e));
 process.on("uncaughtException", (e: unknown) => console.error("[uncaughtException]", e));
@@ -1428,6 +1431,7 @@ const SYNC_JOB_NAMES = new Set([
   "TRENDYOL_SYNC_ORDERS_TARGETED",
   "TRENDYOL_SYNC_CLAIMS",
   "TRENDYOL_SYNC_QNA_QUESTIONS",
+  "TRENDYOL_SYNC_FINANCE",
   "TRENDYOL_CLAIM_APPROVE",
   "TRENDYOL_CLAIM_REJECT_ISSUE",
   "TRENDYOL_CLAIM_CREATE",
@@ -1771,6 +1775,7 @@ const KNOWN_JOBS = [
   "TRENDYOL_PUSH_PRICE_STOCK",
   "TRENDYOL_SYNC_QNA_QUESTIONS",
   "TRENDYOL_QNA_CREATE_ANSWER",
+  "TRENDYOL_SYNC_FINANCE",
 ] as const;
 
 function redactUrl(u: string) {
@@ -1806,6 +1811,363 @@ function fileHash12(p: string) {
     knownJobs: KNOWN_JOBS,
   });
 })();
+
+// -----------------------------------------------------------------------------
+// Sprint 14 — Finance (CHE)
+// -----------------------------------------------------------------------------
+
+type FinanceSyncParams = {
+  startDate?: number; // epoch-ms
+  endDate?: number;   // epoch-ms
+  windowDays?: number; // max 15
+  lookbackWindows?: number; // number of windows to walk backwards
+  size?: 500 | 1000;
+
+  settlementTypes?: string[];
+  otherFinancialTypes?: string[];
+};
+
+function stableStringify(x: any): string {
+  if (x === null || x === undefined) return "null";
+  const t = typeof x;
+  if (t === "number" || t === "boolean") return JSON.stringify(x);
+  if (t === "string") return JSON.stringify(x);
+  if (Array.isArray(x)) return "[" + x.map(stableStringify).join(",") + "]";
+  if (t === "object") {
+    const keys = Object.keys(x).sort();
+    return (
+      "{" +
+      keys
+        .map((k) => JSON.stringify(k) + ":" + stableStringify((x as any)[k]))
+        .join(",") +
+      "}"
+    );
+  }
+  return JSON.stringify(String(x));
+}
+
+function sha256Hex(s: string) {
+  return crypto.createHash("sha256").update(s).digest("hex");
+}
+
+function asString(v: any): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
+function asNumber(v: any): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function asInt(v: any): number | null {
+  const n = asNumber(v);
+  return n == null ? null : Math.trunc(n);
+}
+
+function asDate(v: any): Date | null {
+  if (v == null) return null;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
+  const n = asNumber(v);
+  if (n != null && n > 0) {
+    const d = new Date(n);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const d = new Date(String(v));
+  if (!Number.isNaN(d.getTime())) return d;
+  return null;
+}
+
+function extractRows(resp: any): any[] {
+  if (!resp) return [];
+  if (Array.isArray(resp)) return resp;
+  if (Array.isArray(resp.content)) return resp.content;
+  if (Array.isArray(resp.items)) return resp.items;
+  if (Array.isArray(resp.data)) return resp.data;
+  if (resp.result) {
+    if (Array.isArray(resp.result.content)) return resp.result.content;
+    if (Array.isArray(resp.result.items)) return resp.result.items;
+    if (Array.isArray(resp.result)) return resp.result;
+  }
+  return [];
+}
+
+function shouldContinuePaging(resp: any, got: number, size: number, page: number): boolean {
+  if (!resp) return false;
+  const totalPages = asInt(resp.totalPages ?? resp.pageCount ?? resp.totalPage ?? resp?.page?.totalPages);
+  if (totalPages != null) return page + 1 < totalPages;
+
+  const hasNext = resp.hasNext ?? resp.hasNextPage ?? resp?.page?.hasNext;
+  if (typeof hasNext === "boolean") return hasNext;
+
+  // heuristic: if we got a full page, there might be more
+  return got === size;
+}
+
+async function fetchAllPaged(fetchPage: (page: number) => Promise<any>, size: number, maxPages = 200) {
+  const all: any[] = [];
+  let page = 0;
+  while (page < maxPages) {
+    const resp = await fetchPage(page);
+    const rows = extractRows(resp);
+    all.push(...rows);
+    if (!shouldContinuePaging(resp, rows.length, size, page)) break;
+    page += 1;
+  }
+  return all;
+}
+
+async function syncFinance(connectionId: string, cfg: TrendyolConfig, params?: FinanceSyncParams) {
+  const now = Date.now();
+
+  const windowDays = Math.min(15, Math.max(1, Math.trunc(Number(params?.windowDays ?? 15))));
+  const lookbackWindows = Math.min(24, Math.max(1, Math.trunc(Number(params?.lookbackWindows ?? 1))));
+
+  const end0 = Number.isFinite(Number(params?.endDate)) ? Number(params?.endDate) : now;
+  const start0Candidate = Number.isFinite(Number(params?.startDate))
+    ? Number(params?.startDate)
+    : end0 - windowDays * 24 * 60 * 60 * 1000;
+
+  // enforce max 15d
+  const maxSpanMs = 15 * 24 * 60 * 60 * 1000;
+  const start0 = Math.max(0, Math.min(start0Candidate, end0 - 1));
+  const span = end0 - start0;
+  const safeEnd0 = span > maxSpanMs ? start0 + maxSpanMs : end0;
+
+  const size = ((params?.size === 500 || params?.size === 1000) ? params.size : 1000) as 500 | 1000;
+
+  const settlementTypes =
+    (params?.settlementTypes?.length ? params.settlementTypes : [
+      "SellerRevenuePositive",
+      "SellerRevenueNegative",
+      "CommissionNegative",
+      "CommissionPositive",
+    ]).map((s) => String(s).trim()).filter(Boolean);
+
+  const otherFinancialTypes =
+    (params?.otherFinancialTypes?.length ? params.otherFinancialTypes : [
+      "PaymentOrder",
+      "WireTransfer",
+      "CashAdvance",
+      "Stoppage",
+      "DeductionInvoices",
+    ]).map((s) => String(s).trim()).filter(Boolean);
+
+  const sellerId = String((cfg as any).sellerId ?? "").trim();
+
+  let settlementsUpserted = 0;
+  let otherUpserted = 0;
+  let cargoUpserted = 0;
+
+  const cargoInvoiceSerials = new Set<string>();
+
+  const windows: Array<{ startDate: number; endDate: number }> = [];
+  for (let w = 0; w < lookbackWindows; w++) {
+    const wStart = start0 - w * windowDays * 24 * 60 * 60 * 1000;
+    const wEnd = (w === 0) ? safeEnd0 : (wStart + windowDays * 24 * 60 * 60 * 1000);
+    windows.push({ startDate: wStart, endDate: wEnd });
+  }
+
+  for (const win of windows) {
+    const startMs = win.startDate;
+    const endMs = win.endDate;
+
+    // ---- Settlements
+    for (const t of settlementTypes) {
+      const rows = await fetchAllPaged(
+        (page) => trendyolFinanceCheSettlements(cfg, { startDate: startMs, endDate: endMs, transactionType: t, page, size }),
+        size
+      );
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const paymentOrderId = asString((r as any).paymentOrderId ?? (r as any).paymentOrderID ?? (r as any).paymentOrderNo);
+        const orderNumber = asString((r as any).orderNumber ?? (r as any).orderNo ?? (r as any).orderId);
+        const settlementDate = asDate((r as any).settlementDate ?? (r as any).date ?? (r as any).createdDate ?? (r as any).transactionDate);
+        const currencyType = asInt((r as any).currencyType ?? (r as any).currency);
+        const grossAmount = asNumber((r as any).grossAmount ?? (r as any).gross ?? (r as any).totalAmount ?? (r as any).amount);
+        const netAmount = asNumber((r as any).netAmount ?? (r as any).net ?? (r as any).netTotal ?? (r as any).netamount);
+
+        const rawHash = sha256Hex(stableStringify(r));
+        const stableId = paymentOrderId ?? orderNumber ?? `${rawHash}:${i}`;
+        const dedupeKey = sha256Hex(`settlement|${connectionId}|${t}|${startMs}|${endMs}|${stableId}`);
+
+        await prisma.settlement.upsert({
+          where: { dedupeKey },
+          create: {
+            connectionId,
+            marketplace: "trendyol",
+            sellerId: sellerId || "unknown",
+            transactionType: t,
+            startDate: new Date(startMs),
+            endDate: new Date(endMs),
+            paymentOrderId,
+            orderNumber,
+            settlementDate,
+            currencyType,
+            grossAmount,
+            netAmount,
+            dedupeKey,
+            raw: r as any,
+          },
+          update: {
+            paymentOrderId,
+            orderNumber,
+            settlementDate,
+            currencyType,
+            grossAmount,
+            netAmount,
+            raw: r as any,
+            updatedAt: new Date(),
+          },
+        });
+
+        settlementsUpserted += 1;
+      }
+    }
+
+    // ---- Other financials
+    for (const t of otherFinancialTypes) {
+      const rows = await fetchAllPaged(
+        (page) => trendyolFinanceCheOtherFinancials(cfg, { startDate: startMs, endDate: endMs, transactionType: t, page, size }),
+        size
+      );
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const transactionDate = asDate((r as any).transactionDate ?? (r as any).date ?? (r as any).createdDate);
+        const description = asString((r as any).description ?? (r as any).desc ?? (r as any).transactionTypeName ?? (r as any).explanation);
+        const debt = asNumber((r as any).debt ?? (r as any).debit ?? (r as any).outgoing);
+        const credit = asNumber((r as any).credit ?? (r as any).incoming);
+        const currencyType = asInt((r as any).currencyType ?? (r as any).currency);
+
+        const orderNumber = asString((r as any).orderNumber ?? (r as any).orderNo ?? (r as any).orderId);
+        const paymentOrderId = asString((r as any).paymentOrderId ?? (r as any).paymentOrderID ?? (r as any).paymentOrderNo);
+        const barcode = asString((r as any).barcode ?? (r as any).barCode);
+
+        const invoiceSerialNumber = asString((r as any).invoiceSerialNumber ?? (r as any).invoiceSerialNo ?? (r as any).invoiceSerial);
+        const invoiceNumber = asString((r as any).invoiceNumber ?? (r as any).invoiceNo ?? (r as any).invoice_number);
+
+        if (invoiceSerialNumber) cargoInvoiceSerials.add(invoiceSerialNumber);
+
+        const rawHash = sha256Hex(stableStringify(r));
+        const stableId =
+          paymentOrderId ??
+          (invoiceSerialNumber ? `${invoiceSerialNumber}:${invoiceNumber ?? ""}` : null) ??
+          orderNumber ??
+          `${rawHash}:${i}`;
+
+        const dedupeKey = sha256Hex(`fin|${connectionId}|${t}|${startMs}|${endMs}|${stableId}`);
+
+        await prisma.financialTxn.upsert({
+          where: { dedupeKey },
+          create: {
+            connectionId,
+            marketplace: "trendyol",
+            sellerId: sellerId || "unknown",
+            transactionType: t,
+            transactionDate,
+            description,
+            debt,
+            credit,
+            currencyType,
+            orderNumber,
+            paymentOrderId,
+            barcode,
+            invoiceSerialNumber,
+            invoiceNumber,
+            dedupeKey,
+            raw: r as any,
+          },
+          update: {
+            transactionDate,
+            description,
+            debt,
+            credit,
+            currencyType,
+            orderNumber,
+            paymentOrderId,
+            barcode,
+            invoiceSerialNumber,
+            invoiceNumber,
+            raw: r as any,
+            updatedAt: new Date(),
+          },
+        });
+
+        otherUpserted += 1;
+      }
+    }
+  }
+
+  // ---- Cargo invoice items (best-effort)
+  // Strategy: use invoiceSerialNumber(s) observed in FinancialTxn rows.
+  for (const serial of cargoInvoiceSerials) {
+    const rows = await fetchAllPaged(
+      (page) => trendyolFinanceCargoInvoiceItems(cfg, serial, { page, size }),
+      size
+    );
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+
+      const invoiceSerialNumber = asString((r as any).invoiceSerialNumber ?? (r as any).invoiceSerialNo ?? serial) ?? serial;
+      const invoiceNumber = asString((r as any).invoiceNumber ?? (r as any).invoiceNo ?? (r as any).invoice_number) ?? "NA";
+      const lineNumber = asInt((r as any).lineNumber ?? (r as any).lineNo ?? (r as any).line);
+      const orderNumber = asString((r as any).orderNumber ?? (r as any).orderNo ?? (r as any).orderId);
+      const barcode = asString((r as any).barcode ?? (r as any).barCode);
+      const currencyType = asInt((r as any).currencyType ?? (r as any).currency);
+      const amount = asNumber((r as any).amount ?? (r as any).totalAmount ?? (r as any).grossAmount);
+
+      const rawHash = sha256Hex(stableStringify(r));
+      const stableId = `${invoiceSerialNumber}|${invoiceNumber}|${lineNumber ?? ""}|${orderNumber ?? ""}|${barcode ?? ""}|${amount ?? ""}|${rawHash}:${i}`;
+      const dedupeKey = sha256Hex(`cargo|${connectionId}|${stableId}`);
+
+      await prisma.cargoInvoiceItem.upsert({
+        where: { dedupeKey },
+        create: {
+          connectionId,
+          marketplace: "trendyol",
+          sellerId: sellerId || "unknown",
+          invoiceSerialNumber,
+          invoiceNumber,
+          lineNumber,
+          orderNumber,
+          barcode,
+          currencyType,
+          amount,
+          dedupeKey,
+          raw: r as any,
+        },
+        update: {
+          invoiceSerialNumber,
+          invoiceNumber,
+          lineNumber,
+          orderNumber,
+          barcode,
+          currencyType,
+          amount,
+          raw: r as any,
+          updatedAt: new Date(),
+        },
+      });
+
+      cargoUpserted += 1;
+    }
+  }
+
+  return {
+    settlementsUpserted,
+    financialTxnsUpserted: otherUpserted,
+    cargoInvoiceItemsUpserted: cargoUpserted,
+    windows,
+    size,
+    settlementTypes,
+    otherFinancialTypes,
+  };
+}
+
 
 const worker = new Worker(
   "eci-jobs",
@@ -1966,6 +2328,12 @@ case "TRENDYOL_QNA_CREATE_ANSWER": {
   };
   break;
 }
+
+
+        case "TRENDYOL_SYNC_FINANCE": {
+          summary = await syncFinance(connectionId, cfg, params ?? undefined);
+          break;
+        }
 
 case "TRENDYOL_SYNC_CLAIMS": {
           summary = await syncClaims(connectionId, cfg, params ?? undefined);

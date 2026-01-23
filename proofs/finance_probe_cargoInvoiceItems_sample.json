@@ -1,7 +1,8 @@
 {
   "ok": true,
   "envPath": "C:\\dev\\eci\\services\\core\\.env",
-  "windowDays": 7,
+  "windowDays": 15,
+  "lookbackWindows": 6,
   "pageSize": 1000,
   "connection": {
     "id": "cmk28anrb0000e6gwaprps4hn",
@@ -26,13 +27,73 @@
   },
   "probe": "cargoInvoiceItems",
   "cargo": {
-    "ok": false,
+    "ok": true,
+    "attempts": [
+      {
+        "windowIndex": 0,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2026-01-08T07:28:52.614Z",
+          "endDate": "2026-01-23T07:28:52.614Z"
+        },
+        "deductionInvoices": {
+          "contentCount": 0,
+          "invoiceSerialNumber": null,
+          "invoiceNumber": null
+        }
+      },
+      {
+        "windowIndex": 1,
+        "windowDays": 15,
+        "range": {
+          "startDate": "2025-12-24T07:28:52.690Z",
+          "endDate": "2026-01-08T07:28:52.690Z"
+        },
+        "deductionInvoices": {
+          "contentCount": 1,
+          "invoiceSerialNumber": "DDF2026000643484",
+          "invoiceNumber": null
+        }
+      }
+    ],
     "deductionInvoices": {
       "ok": true,
-      "contentCount": 0,
-      "chosenRow": null,
-      "invoiceSerialNumber": null
+      "chosenRow": {
+        "id": "DDF2026000643484",
+        "transactionDate": 1767762033851,
+        "barcode": null,
+        "transactionType": "Tedarik Edememe",
+        "receiptId": null,
+        "description": "Müşteri tarafından oluşturulan siparişin temin edilememesi ve/veya termin süresinin sözleşmede yer alan süre kadar aşılarak geciktirilmesi durumunda tarafınıza yansıtılan tazmin faturasıdır.",
+        "debt": 50,
+        "credit": 0,
+        "paymentPeriod": null,
+        "commissionRate": null,
+        "commissionAmount": null,
+        "commissionInvoiceSerialNumber": "DDF2026000643484",
+        "sellerRevenue": null,
+        "orderNumber": null,
+        "orderDate": null,
+        "paymentOrderId": null,
+        "paymentDate": 1767762033851,
+        "sellerId": 142312,
+        "storeId": null,
+        "storeName": null,
+        "storeAddress": null,
+        "country": "Türkiye",
+        "currency": "TRY",
+        "affiliate": "TRENDYOLTR",
+        "shipmentPackageId": null
+      },
+      "invoiceSerialNumber": "DDF2026000643484",
+      "invoiceNumber": null
     },
-    "reason": "no_invoiceSerialNumber_found_in_deductionInvoices"
+    "cargoInvoiceItems": {
+      "page": 0,
+      "size": 0,
+      "totalPages": 0,
+      "totalElements": 0,
+      "content": []
+    }
   }
 }
