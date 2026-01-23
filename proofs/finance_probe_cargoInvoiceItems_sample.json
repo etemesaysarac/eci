@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "envPath": "C:\\dev\\eci\\services\\core\\.env",
+  "windowDays": 7,
+  "pageSize": 1000,
+  "connection": {
+    "id": "cmk28anrb0000e6gwaprps4hn",
+    "name": "Trendyol PROD",
+    "type": "trendyol",
+    "status": "active",
+    "updatedAt": "2026-01-22T09:41:19.057Z",
+    "createdAt": "2026-01-06T06:48:43.461Z"
+  },
+  "cfgInfo": {
+    "sellerId": "142312",
+    "supplierId": "142312",
+    "env": "prod",
+    "baseUrl": "https://apigw.trendyol.com",
+    "preferSapigw": true,
+    "agentName": "SoXYZ",
+    "integrationName": "ECI"
+  },
+  "notes": {
+    "otherfinancialsRule": "transactionType + startDate + endDate are mandatory; max window is 15 days; single type per request",
+    "cargoInvoiceRule": "invoiceSerialNumber is taken from otherfinancials transactionType=DeductionInvoices (cargo invoice record Id) then used on /cargo-invoice/{invoiceSerialNumber}/items"
+  },
+  "probe": "cargoInvoiceItems",
+  "cargo": {
+    "ok": false,
+    "deductionInvoices": {
+      "ok": true,
+      "contentCount": 0,
+      "chosenRow": null,
+      "invoiceSerialNumber": null
+    },
+    "reason": "no_invoiceSerialNumber_found_in_deductionInvoices"
+  }
+}

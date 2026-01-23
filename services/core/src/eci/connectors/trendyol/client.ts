@@ -1006,6 +1006,108 @@ export async function trendyolUpdatePriceAndInventory(cfg: TrendyolConfig, paylo
 }
 
 
+// -----------------------------
+// Sprint 14 — Finance / Mutabakat (CHE)
+// -----------------------------
+
+export type FinanceCheQuery = {
+  /** Timestamp (milliseconds) */
+  startDate: number;
+  /** Timestamp (milliseconds) */
+  endDate: number;
+  /** Trendyol Finance transactionType (single type per request) */
+  transactionType: string;
+  page?: number;
+  size?: number;
+};
+
+/**
+ * Trendyol Finance (CHE) endpoints are picky about `size`.
+ * Field evidence (PROBE 14.0): server rejects sizes other than 500 or 1000.
+ * We default to 500 to be safe and allow 1000 explicitly.
+ */
+function normalizeFinanceSize(v: any, fallback = 500): 500 | 1000 {
+  const n = Number(v);
+  if (Number.isFinite(n) && Math.trunc(n) === 1000) return 1000;
+  if (Number.isFinite(n) && Math.trunc(n) === 500) return 500;
+  const fb = Math.trunc(Number(fallback));
+  return fb === 1000 ? 1000 : 500;
+}
+
+function clampInt(n: any, fallback: number, min: number, max: number) {
+  const x = typeof n === "number" && Number.isFinite(n) ? n : Number(fallback);
+  return Math.min(Math.max(Math.trunc(x), min), max);
+}
+
+export async function trendyolFinanceCheSettlements(cfg: TrendyolConfig, q: FinanceCheQuery) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const url = `${base}/integration/finance/che/sellers/${sellerId}/settlements`;
+
+  const page = clampInt(q.page, 0, 0, 999999);
+  const size = normalizeFinanceSize(q.size, 500);
+
+  const params: Record<string, any> = {
+    startDate: q.startDate,
+    endDate: q.endDate,
+    transactionType: String(q.transactionType ?? "").trim(),
+    page,
+    size,
+  };
+
+  if (!params.transactionType) throw new Error("finance/settlements: transactionType is required");
+  if (!params.startDate || !params.endDate) throw new Error("finance/settlements: startDate and endDate are required");
+
+  return trendyolFetch<any>(c, url, { params });
+}
+
+export async function trendyolFinanceCheOtherFinancials(cfg: TrendyolConfig, q: FinanceCheQuery) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const url = `${base}/integration/finance/che/sellers/${sellerId}/otherfinancials`;
+
+  const page = clampInt(q.page, 0, 0, 999999);
+  const size = normalizeFinanceSize(q.size, 500);
+
+  const params: Record<string, any> = {
+    startDate: q.startDate,
+    endDate: q.endDate,
+    transactionType: String(q.transactionType ?? "").trim(),
+    page,
+    size,
+  };
+
+  if (!params.transactionType) throw new Error("finance/otherfinancials: transactionType is required");
+  if (!params.startDate || !params.endDate) throw new Error("finance/otherfinancials: startDate and endDate are required");
+
+  return trendyolFetch<any>(c, url, { params });
+}
+
+export async function trendyolFinanceCargoInvoiceItems(
+  cfg: TrendyolConfig,
+  invoiceSerialNumber: string | number,
+  q?: { page?: number; size?: number },
+) {
+  const c = normalizeConfig(cfg);
+  const base = resolveApigwBaseUrl(c);
+
+  const sellerId = encodeURIComponent(String(c.sellerId));
+  const serial = encodeURIComponent(String(invoiceSerialNumber));
+  const url = `${base}/integration/finance/che/sellers/${sellerId}/cargo-invoice/${serial}/items`;
+
+  const page = clampInt(q?.page, 0, 0, 999999);
+  const size = normalizeFinanceSize(q?.size, 500);
+
+  const params: Record<string, any> = { page, size };
+  return trendyolFetch<any>(c, url, { params });
+}
+
+
+
 export function normalizeConfig(cfg: TrendyolConfig): TrendyolConfig {
   const sellerId = String(cfg.sellerId ?? "").trim();
   const supplierId = cfg.supplierId != null ? String(cfg.supplierId).trim() : undefined;

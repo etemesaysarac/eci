@@ -1,0 +1,240 @@
+# ECI — Sprint 14 (Finance / Mutabakat) — MASTER CONTEXT (Yeni Chat’e Yapıştır)
+
+## 0) Altın Kurallar (Hız + Kanıt + Kontrol)
+- Referans kod tabanı: “dosyalar.zip”.
+- Değişiklik kuralı: Sadece güncellenen dosyalar patch ZIP.
+- Kanıt standardı: Her adım bir proof JSON üretir (Çıktılar.txt yerine proof’lar prefer).
+- Trendyol doğrulama kaynağı: Trendyol.pdf “Muhasebe ve Finans” / “Cari Hesap Ekstresi”.
+- Kritik kurallar (PDF):
+  - transactionType zorunlu, tek istekte tek type
+  - startDate+endDate zorunlu, aralık 15 günü geçemez
+  - settlements ve otherfinancials farklı kayıtlar döner
+  - paymentOrderId ile ödeme eşleştirme yapılır
+
+## 1) Roller
+- Etem (stajyer): komutları çalıştırır, çıkan proof dosyalarını yükler.
+- Baş Mühendis (sen): patch ZIP üretir, komutları net verir, PDF uyumunu tek tek kontrol eder.
+
+## 2) Sprint 14 Amaç
+“ne sattım / ne kesildi / ne yattı” mutabakatını panelde raporlayacak altyapı.
+Kapsam:
+A) Read path: settlements + otherfinancials + cargo invoice items çekilebiliyor kanıtı
+B) DB model: Settlement, FinancialTxn (+ ops CargoInvoiceItem)
+C) Worker sync: idempotent sync
+D) Basit report endpoint’leri (panel grafikleri için)
+
+## 3) Trendyol Finance — Sözleşme (PDF)
+### 3.1 Settlements
+- GET /integration/finance/che/sellers/{sellerId}/settlements
+- Query: startDate, endDate, transactionType, page, size
+- Not: Bu servis satış/iade/indirim/kupon/provizyon detaylarına gider.
+
+### 3.2 OtherFinancials (Cari Hesap Ekstresi)
+- GET /integration/finance/che/sellers/{sellerId}/otherfinancials
+- Kurallar:
+  - transactionType zorunlu (tek type)
+  - startDate+endDate zorunlu
+  - max 15 günlük tarih aralığı
+
+### 3.3 CargoInvoiceItems (Kargo Faturası Detayları)
+- Trendyol’un satıcıya kestiği kargo faturası kalem detayları.
+- (Not: Bu servis genellikle “DeductionInvoices içindeki invoiceSerialNumber + invoiceNumber” üzerinden çağrılır.)
+
+## 4) Sprint 14 — Hızlı İskelet (mikro adımlar)
+> Her adım tek hedef + tek proof dosyası.
+
+### 14.0 PROBE (read-only, en hızlı kanıt)
+Hedef: Prod endpoint erişimi + auth + param kurallarını doğrula.
+1) settlements probe → proofs/finance_probe_settlements.json
+2) otherfinancials probe → proofs/finance_probe_otherfinancials.json
+3) cargo invoice sample probe → proofs/finance_probe_cargo_invoice_items.json (mümkünse)
+
+Kabul:
+- Her proof’ta ok=true ve response summary (count/totalElements vs) var.
+
+### 14.1 DB (minimal model)
+Hedef: Finance verisini saklayacak çekirdek tablolar.
+- Settlement:
+  - connectionId, sellerId, transactionType, startDate, endDate
+  - paymentOrderId (varsa), totals, raw(json), createdAt/updatedAt
+- FinancialTxn:
+  - connectionId, transactionType, transactionDate, debt/credit
+  - orderNumber/paymentOrderId/barcode vb referanslar
+  - raw(json)
+- (Ops) CargoInvoiceItem:
+  - invoiceSerialNumber, invoiceNumber, line items, totals, raw(json)
+
+Kabul:
+- prisma migrate/deploy çalışır, tablolar oluşur.
+
+### 14.2 WORKER SYNC (idempotent)
+Hedef: Aynı pencere tekrar sync edilince duplicate üretmeden upsert.
+Job’lar:
+- TRENDYOL_SYNC_FINANCE_SETTLEMENTS (windowed)
+- TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (windowed + transactionType)
+- TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (deduction invoices -> detail)
+
+Kabul:
+- Worker log: fetched>0 + upserted>0 (veya “0 ise nedeni kanıtlı”)
+- 2. çalıştırmada duplicate yok (count stabil)
+
+### 14.3 API REPORTS (panel için basit)
+Hedef: Panel grafiklerine malzeme verecek 3 endpoint.
+- GET /v1/finance/summary?connectionId&startDate&endDate
+  - gross/net/deductions (yaklaşık)
+- GET /v1/finance/settlements?connectionId&startDate&endDate&transactionType&page&pageSize
+- GET /v1/finance/ledger?connectionId&startDate&endDate&transactionType&page&pageSize
+
+Kabul:
+- 200 OK + pagination çalışır + totals doğru
+
+## 5) Kanıt Dosyası (SPRINT_14_PROOF.md) — minimum şablon
+1) PDF sözleşme maddeleri (transactionType zorunlu, 15 gün kuralı, servis ayrımı)
+2) PROBE kanıtları (3 JSON + özet tablo)
+3) DB kanıtı (count’lar + sample record)
+4) SYNC kanıtı (worker log start->done + idempotency)
+5) Report kanıtı (3 endpoint örnek response)
+
+## 6) Çalışma stratejisi (uzun beklemeyi engelle)
+- Önce 14.0 PROBE: sadece 1-2 request ile “erişim var” kanıtı al.
+- Sonra 14.1 DB: minimal tablo + raw sakla, şemayı sonra güzelleştir.
+- Sonra 14.2 SYNC: 15 gün kuralına göre windowing zorunlu; pencereyi küçük tut.
+- En son 14.3 REPORT: DB’den okunur endpoint’ler (fast win).
+
+
+
+
+Sprint 14’ün ana fikri: “ne sattım / ne kesildi / ne yattı”. Trendyol dokümanında Finance tarafı 3 parçaya ayrılıyor:
+
+Settlements (mutabakat / ödeme tarafı) 
+
+
+
+OtherFinancials (Cari Hesap Ekstresi) (kesintiler/hareketler; transactionType ile) ve 15 gün kuralı 
+
+
+
+ 
+
+
+CargoInvoiceItems (kargo faturası detayları; “DeductionInvoices” içindeki seri/numara ile çağrılıyor) 
+
+
+Sprint 14’ü “hızlı ve kanıtlı” bitirmek için mikro-adımlar
+
+14.0 — Sadece PROBE (read-only, kanıt üret)
+
+finance_probe_settlements_latest_connection.json üret
+
+finance_probe_otherfinancials_latest_connection.json üret
+
+(varsa) finance_probe_cargoInvoiceItems_sample.json üret
+
+Burada amaç: endpoint erişimi + auth + pagination + 15-gün pencere kuralını doğrulamak. 
+
+
+
+14.1 — DB tasarımı (minimal, sonra genişlet)
+
+Settlement tablosu: connectionId + (Trendyol’un unique kimliği: settlement/paymentOrder vs) + tarih + tutar alanları
+
+FinancialTxn tablosu: connectionId + transactionType + refId + debit/credit + tarih + açıklama + ham payload snapshot
+
+(opsiyonel) CargoInvoiceItem tablosu: invoiceSerial/number + line items + tutar
+
+14.2 — Worker SYNC işleri
+
+TRENDYOL_SYNC_FINANCE_SETTLEMENTS
+
+TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (transactionType parametresi zorunlu; tek tip/istek; 15 gün pencere) 
+
+
+
+ 
+
+
+
+TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (DeductionInvoices → invoiceSerial+invoiceNumber’dan çağır) 
+
+
+
+14.3 — Basit rapor endpoint’leri (panel grafikleri için)
+
+GET /reports/finance/summary?from&to
+
+gross satış (FinancialTxn içinden)
+
+kesintiler (komisyon/kargo/iadeler vb)
+
+net (yaklaşık)
+
+GET /reports/finance/settlements?from&to (yatmış ödemeler)
+
+GET /reports/finance/ledger?from&to&transactionType= (cari hareketler)
+
+14.4 — Kapanış kabul kriterleri (net ve ölçülebilir)
+
+PROBE dosyaları oluşacak ve içinde count>0 (veya boşsa “neden boş” kanıtlı) olacak.
+
+DB’de aynı pencereyi 2 kez sync edince idempotent (duplicate yok).
+
+“15 gün kuralı” ihlal edilmeden otomatik pencereleme yapılacak. 
+Çıktılar
+
+CargoInvoiceItems: En az 1 DeductionInvoices kaydından invoice detail çekip DB’ye yazabildiğimizi kanıtlayacağız. 
+
+
+
+ECI — Sprint 14 (Finance / Mutabakat) — MASTER CONTEXT
+
+AMAÇ:
+“Ne sattım / ne kesildi / ne yattı” finans mutabakat ekranı için veri altyapısını kurmak.
+
+KAPSAM (Trendyol.pdf):
+- Settlements (mutabakat) endpoint’i
+- Cari Hesap Ekstresi (otherfinancials) endpoint’i: transactionType zorunlu + maksimum 15 günlük tarih aralığı
+- CargoInvoiceItems endpoint’i: DeductionInvoices içindeki invoiceSerialNumber+invoiceNumber’dan detay çekme
+
+ÇALIŞMA KURALLARI:
+- Ben (Etem) stajyerim: komutları çalıştırır, proof dosyalarını ve gerekli çıktıları yüklerim.
+- Sen baş mühendissin: kod değişikliklerini patch zip olarak verirsin (yalnız değişen dosyalar).
+- Kanıt yöntemi: “Çıktılar.txt” yerine mümkün olduğunca /proofs altına JSON proof üretip onunla ilerle.
+- Her adım küçük olacak (14.0, 14.1, 14.2...) ve her adımın sonunda:
+  (1) çalıştırılacak komutlar
+  (2) beklenen proof dosyası
+  (3) kabul kriteri net yazılacak.
+
+ŞU ANA KADAR TAMAMLANANLAR (Özet):
+- Sprint 9: Product catalog sync
+- Sprint 10: Price/Stock push
+- Sprint 11: Shipment
+- Sprint 12: Claims/İade
+- Sprint 13: QnA sync + answer post (proof bazlı)
+
+SPRINT 14 YOL HARİTASI:
+14.0 PROBE (read-only):
+- finance_probe_settlements_latest_connection.json
+- finance_probe_otherfinancials_latest_connection.json
+- finance_probe_cargoInvoiceItems_sample.json (varsa)
+
+14.1 DB:
+- Settlement
+- FinancialTxn
+- (ops) CargoInvoiceItem
+
+14.2 WORKER:
+- TRENDYOL_SYNC_FINANCE_SETTLEMENTS
+- TRENDYOL_SYNC_FINANCE_OTHERFINANCIALS (transactionType + 15 gün pencereleme)
+- TRENDYOL_SYNC_FINANCE_CARGO_INVOICE_ITEMS (DeductionInvoices -> invoiceSerial/number)
+
+14.3 API REPORTS:
+- /reports/finance/summary
+- /reports/finance/settlements
+- /reports/finance/ledger
+
+KABUL:
+- Proof dosyaları oluşacak
+- Sync idempotent olacak
+- 15 gün kuralına uyulacak
+- Cargo invoice detail en az 1 örnekle kanıtlanacak
+

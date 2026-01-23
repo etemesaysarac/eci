@@ -1,0 +1,84 @@
+{
+  "ok": true,
+  "envPath": "C:\\dev\\eci\\services\\core\\.env",
+  "windowDays": 7,
+  "pageSize": 1000,
+  "connection": {
+    "id": "cmk28anrb0000e6gwaprps4hn",
+    "name": "Trendyol PROD",
+    "type": "trendyol",
+    "status": "active",
+    "updatedAt": "2026-01-22T09:41:19.057Z",
+    "createdAt": "2026-01-06T06:48:43.461Z"
+  },
+  "cfgInfo": {
+    "sellerId": "142312",
+    "supplierId": "142312",
+    "env": "prod",
+    "baseUrl": "https://apigw.trendyol.com",
+    "preferSapigw": true,
+    "agentName": "SoXYZ",
+    "integrationName": "ECI"
+  },
+  "notes": {
+    "otherfinancialsRule": "transactionType + startDate + endDate are mandatory; max window is 15 days; single type per request",
+    "cargoInvoiceRule": "invoiceSerialNumber is taken from otherfinancials transactionType=DeductionInvoices (cargo invoice record Id) then used on /cargo-invoice/{invoiceSerialNumber}/items"
+  },
+  "probe": "otherfinancials",
+  "otherfinancials": {
+    "ok": true,
+    "endpointOk": true,
+    "dataOk": false,
+    "attempts": [
+      {
+        "transactionType": "PaymentOrder",
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "WireTransfer",
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "CashAdvance",
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      },
+      {
+        "transactionType": "Stoppage",
+        "ok": true,
+        "summary": {
+          "page": 0,
+          "size": 1000,
+          "totalPages": 0,
+          "totalElements": 0,
+          "contentCount": 0
+        },
+        "sample": null
+      }
+    ],
+    "reason": "empty_result_for_test_window_or_transactionTypes"
+  }
+}
