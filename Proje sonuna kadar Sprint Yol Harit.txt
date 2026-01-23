@@ -141,6 +141,10 @@ DB: Question, Answer
 
 Worker: sync questions + post answer
 
+
+
+
+
 Sprint 14 — Finance / Mutabakat
 
 Amaç: “ne sattım / ne kesildi / ne yattı” raporu.
@@ -152,6 +156,10 @@ Bizde:
 DB: Settlement, FinancialTxn
 
 Basit rapor endpoint’leri (panel grafikleri için)
+
+
+
+
 
 Sprint 15 — Panel v1 (artık gerçek panel)
 
